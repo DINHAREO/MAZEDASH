@@ -1,0 +1,574 @@
+<!--
+This is a basic boilerplate example of how to implement simple game UI,
+and also configure additional buttons for mobile compatibility.
+-->
+
+<script>
+  // Character selection state
+  let characterSelection = {
+    isSelectionActive: true,
+    selectedCharacter: 'player' // Default selection
+  };
+
+  // Initial timer state
+  let timerState = {
+    isRunning: false,
+    elapsedTime: 0,
+    bestTime: null
+  };
+
+  // Format milliseconds to MM:SS.ms
+  function formatTime(milliseconds) {
+    if (!milliseconds && milliseconds !== 0) return "--:--:--";
+    
+    const totalSeconds = milliseconds / 1000;
+    const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+    const seconds = Math.floor(totalSeconds % 60).toString().padStart(2, '0');
+    const ms = Math.floor((milliseconds % 1000) / 10).toString().padStart(2, '0');
+    
+    return `${minutes}:${seconds}:${ms}`;
+  }
+
+  // Update timer UI
+  function updateTimerUI() {
+    const timerElement = document.getElementById('timer-value');
+    const bestTimeElement = document.getElementById('best-time-value');
+    
+    if (timerElement) {
+      timerElement.textContent = formatTime(timerState.elapsedTime);
+    }
+    
+    if (bestTimeElement && timerState.bestTime !== null) {
+      bestTimeElement.textContent = formatTime(timerState.bestTime);
+    }
+  }
+
+  // Show/hide timer components based on state
+  function updateTimerVisibility() {
+    const timerContainer = document.getElementById('timer-container');
+    const resultContainer = document.getElementById('result-container');
+    
+    if (timerContainer) {
+      timerContainer.style.display = timerState.isRunning ? 'flex' : 'none';
+    }
+    
+    if (resultContainer) {
+      resultContainer.style.display = !timerState.isRunning && timerState.elapsedTime > 0 ? 'flex' : 'none';
+    }
+  }
+
+  // Show notification at the center of the screen
+  function showNotification(message, duration = 3000) {
+    const notification = document.createElement('div');
+    notification.className = 'notification';
+    notification.textContent = message;
+    
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+      notification.classList.add('fade-out');
+      setTimeout(() => {
+        notification.remove();
+      }, 500);
+    }, duration);
+  }
+
+  // Handle character selection
+  function selectCharacter(characterId) {
+    console.log(`selectCharacter called with: ${characterId}`);
+    
+    // Update UI to show selection
+    const characterCards = document.querySelectorAll('.character-card');
+    characterCards.forEach(card => {
+      card.classList.remove('selected');
+      if (card.dataset.character === characterId) {
+        card.classList.add('selected');
+      }
+    });
+    
+    // Update selection state
+    characterSelection.selectedCharacter = characterId;
+    console.log(`Character selected: ${characterSelection.selectedCharacter}`);
+  }
+
+  // Confirm character selection and start game
+  function confirmCharacterSelection() {
+    console.log(`confirmCharacterSelection called, selected: ${characterSelection.selectedCharacter}`);
+    
+    // Hide character selection UI
+    const characterSelectionContainer = document.getElementById('character-selection-container');
+    if (characterSelectionContainer) {
+      characterSelectionContainer.style.display = 'none';
+    }
+    
+    // Send selection to server
+    console.log("Sending character selection to server");
+    hytopia.sendData({
+      type: 'character-selected',
+      characterId: characterSelection.selectedCharacter
+    });
+    
+    characterSelection.isSelectionActive = false;
+    
+    // Show notification
+    showNotification(`Selected character: ${characterSelection.selectedCharacter.toUpperCase()}`, 2000);
+  }
+
+  // Handle data from server
+  hytopia.onData(data => {
+    if (data.type === 'show-character-selection') {
+      // Activate character selection UI
+      const characterSelectionContainer = document.getElementById('character-selection-container');
+      if (characterSelectionContainer) {
+        characterSelectionContainer.style.display = 'flex';
+      }
+      characterSelection.isSelectionActive = true;
+      
+      // Add click handlers immediately
+      console.log("Adding character selection click handlers");
+      const characterCards = document.querySelectorAll('.character-card');
+      characterCards.forEach(card => {
+        console.log(`Adding click handler for ${card.dataset.character}`);
+        card.addEventListener('click', () => {
+          console.log(`Character card clicked: ${card.dataset.character}`);
+          selectCharacter(card.dataset.character);
+        });
+      });
+      
+      const confirmButton = document.getElementById('confirm-selection');
+      if (confirmButton) {
+        console.log("Adding confirm button click handler");
+        confirmButton.addEventListener('click', () => {
+          console.log("Confirm button clicked");
+          confirmCharacterSelection();
+        });
+      }
+    }
+    
+    if (data.type === 'timer-start') {
+      timerState.isRunning = true;
+      timerState.elapsedTime = 0;
+      updateTimerUI();
+      updateTimerVisibility();
+      showNotification('Timer started! Good luck!');
+    }
+    
+    if (data.type === 'timer-update') {
+      timerState.elapsedTime = data.elapsedTime;
+      timerState.isRunning = data.isRunning;
+      updateTimerUI();
+      updateTimerVisibility();
+    }
+    
+    if (data.type === 'timer-finish') {
+      timerState.isRunning = false;
+      timerState.elapsedTime = data.elapsedTime;
+      timerState.bestTime = data.bestTime;
+      updateTimerUI();
+      updateTimerVisibility();
+      
+      const formattedTime = formatTime(data.elapsedTime);
+      showNotification(`Maze completed! Your time: ${formattedTime}`, 5000);
+    }
+  });
+
+  // Handle interact button touch / untouch
+  document.addEventListener('DOMContentLoaded', () => {
+    // Set up character selection listeners
+    const characterCards = document.querySelectorAll('.character-card');
+    characterCards.forEach(card => {
+      card.addEventListener('click', () => {
+        selectCharacter(card.dataset.character);
+      });
+    });
+    
+    const confirmButton = document.getElementById('confirm-selection');
+    if (confirmButton) {
+      confirmButton.addEventListener('click', confirmCharacterSelection);
+    }
+    
+    const mobileInteractButton = document.getElementById('mobile-interact-button');
+    if (mobileInteractButton) {
+      mobileInteractButton.addEventListener('touchstart', e => {
+        e.preventDefault(); // Prevents mobile highlight/select/copy popup behaviors
+        mobileInteractButton.classList.add('active'); // more immediate feedback to add/remove active class
+        hytopia.pressInput('ml', true);
+      });
+
+      mobileInteractButton.addEventListener('touchend', e => {
+        e.preventDefault();
+        mobileInteractButton.classList.remove('active');
+        hytopia.pressInput('ml', false);
+      });
+    }
+
+    // Handle jump button touch / untouch
+    const mobileJumpButton = document.getElementById('mobile-jump-button');
+    if (mobileJumpButton) {
+      mobileJumpButton.addEventListener('touchstart', e => {
+        e.preventDefault();
+        mobileJumpButton.classList.add('active');
+        hytopia.pressInput(' ', true);
+      });
+
+      mobileJumpButton.addEventListener('touchend', e => {
+        e.preventDefault();
+        mobileJumpButton.classList.remove('active');
+        hytopia.pressInput(' ', false);
+      });
+    }
+  });
+</script>
+
+<!--
+  HYTOPIA allows you to build completely custom UI using HTML, CSS and Javascript.
+  You can build simple UIs, to highly complex ones. UI capabilities are as powerful
+  as building a regular web page - there are close to no limitations on what is possible.
+
+  Remember, HYTOPIA sandboxes your UI & UI scripts, so external network requests or
+  other unsafe actions likely won't work as you expect in production.
+-->
+
+<!-- Character Selection UI -->
+<div id="character-selection-container" class="character-selection-container">
+  <div class="selection-header">Choose Your Runner</div>
+  <div class="characters-grid">
+    <div class="character-card selected" data-character="player" onclick="selectCharacter('player')">
+      <div class="character-image">
+        <img src="{{CDN_ASSETS_URL}}/assets/ui/icons/play.png" alt="Human Runner">
+      </div>
+      <div class="character-name">Human</div>
+      <div class="character-desc">Balanced runner with good all-around abilities</div>
+    </div>
+    <div class="character-card" data-character="skeleton" onclick="selectCharacter('skeleton')">
+      <div class="character-image">
+        <img src="{{CDN_ASSETS_URL}}/assets/ui/icons/skel.png" alt="Skeleton Runner">
+      </div>
+      <div class="character-name">Skeleton</div>
+      <div class="character-desc">Lightweight and agile but with lower durability</div>
+    </div>
+    <div class="character-card" data-character="zombie" onclick="selectCharacter('zombie')">
+      <div class="character-image">
+        <img src="{{CDN_ASSETS_URL}}/assets/ui/icons/zomb.png" alt="Zombie Runner">
+      </div>
+      <div class="character-name">Zombie</div>
+      <div class="character-desc">Slower but with better stability in tight corners</div>
+    </div>
+  </div>
+  <button id="confirm-selection" class="confirm-button" onclick="confirmCharacterSelection()">Start Game</button>
+</div>
+
+<!-- Timer UI -->
+<div id="timer-container" class="timer-container">
+  <div class="timer-label">Time</div>
+  <div id="timer-value" class="timer-value">00:00:00</div>
+</div>
+
+<!-- Result UI (shown when finished) -->
+<div id="result-container" class="result-container">
+  <div class="result-header">Maze Completed!</div>
+  <div class="result-time">
+    <div class="time-label">Your Time:</div>
+    <div id="timer-value-result" class="time-value">00:00:00</div>
+  </div>
+  <div class="best-time">
+    <div class="time-label">Best Time:</div>
+    <div id="best-time-value" class="time-value">--:--:--</div>
+  </div>
+</div>
+
+<!-- Mobile Controls -->
+<div class="mobile-controls">
+  <a id="mobile-interact-button" class="mobile-button">
+    <img src="{{CDN_ASSETS_URL}}/icons/target.png" />
+  </a>
+
+  <a id="mobile-jump-button" class="mobile-button">
+    <img src="{{CDN_ASSETS_URL}}/icons/jump.png" />
+  </a>
+</div>
+
+<style>
+  /* Font imports */
+  @font-face {
+    font-family: 'Inter';
+    src: url('{{CDN_ASSETS_URL}}/ui/fonts/Inter-Bold.ttf') format('truetype');
+    font-weight: bold;
+  }
+  
+  @font-face {
+    font-family: 'Inter';
+    src: url('{{CDN_ASSETS_URL}}/ui/fonts/Inter-Thin.ttf') format('truetype');
+    font-weight: thin;
+  }
+  
+  /* Reset and base styles */
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Inter', sans-serif;
+  }
+  
+  /* Character Selection Styles */
+  .character-selection-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.85);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+  
+  .selection-header {
+    color: #FFCC00;
+    font-size: 36px;
+    font-weight: bold;
+    margin-bottom: 40px;
+    text-shadow: 0 0 10px rgba(255, 204, 0, 0.5);
+  }
+  
+  .characters-grid {
+    display: flex;
+    gap: 30px;
+    margin-bottom: 40px;
+  }
+  
+  .character-card {
+    width: 220px;
+    height: 300px;
+    background-color: rgba(30, 30, 30, 0.7);
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s, background-color 0.2s;
+    border: 2px solid transparent;
+  }
+  
+  .character-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.4);
+    background-color: rgba(40, 40, 40, 0.8);
+  }
+  
+  .character-card.selected {
+    border-color: #FFCC00;
+    background-color: rgba(60, 50, 10, 0.7);
+    box-shadow: 0 0 20px rgba(255, 204, 0, 0.3);
+  }
+  
+  .character-image {
+    width: 140px;
+    height: 140px;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(20, 20, 20, 0.7);
+  }
+  
+  .character-image img {
+    max-width: 100%;
+    max-height: 100%;
+  }
+  
+  .character-name {
+    color: white;
+    font-size: 22px;
+    font-weight: bold;
+    margin-bottom: 10px;
+  }
+  
+  .character-desc {
+    color: #CCCCCC;
+    font-size: 14px;
+    text-align: center;
+    line-height: 1.4;
+  }
+  
+  .confirm-button {
+    background-color: #FFCC00;
+    color: #000000;
+    border: none;
+    border-radius: 25px;
+    padding: 12px 30px;
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.1s;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  }
+  
+  .confirm-button:hover {
+    background-color: #FFD633;
+    transform: scale(1.05);
+  }
+  
+  .confirm-button:active {
+    background-color: #E6B800;
+    transform: scale(0.95);
+  }
+  
+  /* Timer container styles */
+  .timer-container {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: rgba(0, 0, 0, 0.7);
+    border-radius: 8px;
+    padding: 10px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  
+  .timer-label {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 14px;
+    margin-bottom: 5px;
+  }
+  
+  .timer-value {
+    color: #00FFFF;
+    font-size: 28px;
+    font-weight: bold;
+    text-shadow: 0 0 5px rgba(0, 255, 255, 0.5);
+  }
+  
+  /* Result container styles */
+  .result-container {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: rgba(0, 0, 0, 0.8);
+    border-radius: 10px;
+    padding: 20px 30px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    min-width: 300px;
+    display: none;
+  }
+  
+  .result-header {
+    color: #00FF00;
+    font-size: 24px;
+    font-weight: bold;
+    margin-bottom: 20px;
+    text-shadow: 0 0 10px rgba(0, 255, 0, 0.7);
+  }
+  
+  .result-time, .best-time {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    margin-bottom: 10px;
+  }
+  
+  .time-label {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 16px;
+  }
+  
+  .time-value {
+    color: #FFFF00;
+    font-size: 16px;
+    font-weight: bold;
+  }
+  
+  /* Notification styles */
+  .notification {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 15px 25px;
+    border-radius: 8px;
+    font-size: 20px;
+    text-align: center;
+    max-width: 80%;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    animation: fade-in 0.5s forwards;
+    z-index: 100;
+  }
+  
+  .notification.fade-out {
+    animation: fade-out 0.5s forwards;
+  }
+  
+  @keyframes fade-in {
+    from { opacity: 0; transform: translate(-50%, -30%); }
+    to { opacity: 1; transform: translate(-50%, -50%); }
+  }
+  
+  @keyframes fade-out {
+    from { opacity: 1; transform: translate(-50%, -50%); }
+    to { opacity: 0; transform: translate(-50%, -70%); }
+  }
+
+  /* By default, we hide the mobile controls */
+  .mobile-controls {
+    display: none;
+  }
+
+  /*
+    We can use the body.mobile class to detect if we're on a mobile device.
+    The HYTOPIA game client will always add this class to the body element when running on a mobile device.
+  */
+  body.mobile .mobile-controls { /* If this css selector matches because we're on mobile, show the mobile controls */
+    display: flex;
+    gap: 14px;
+    position: fixed;
+    bottom: 40px;
+    right: 40px;
+  }
+
+  /* You can configure and style your buttons however you'd like. This is a minimalistic starting point. */
+  .mobile-button {
+    background-color: rgba(0, 0, 0, 0.5);
+    border-radius: 50%;
+    align-items: center;
+    justify-content: center;
+    display: flex;
+    width: 50px;
+    height: 50px;
+    transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    will-change: transform, background-color;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    font-weight: bold;
+    color: rgba(255, 255, 255, 0.8);
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+  }
+  
+  .mobile-button img {
+    width: 22px;
+    height: 22px;
+  }
+
+  .mobile-button.active {
+    transform: scale(0.92);
+    background-color: rgba(0, 0, 0, 0.75);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  }  
+</style>

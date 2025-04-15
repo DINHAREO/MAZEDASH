@@ -1,0 +1,2292 @@
+<script>
+    // Add celestial decorations
+    function addCelestialElements() {
+        // Add stars
+        for (let i = 0; i < 20; i++) {
+            const star = document.createElement('div');
+            star.className = 'celestial-star';
+            star.style.width = Math.random() * 3 + 1 + 'px';
+            star.style.height = star.style.width;
+            star.style.top = Math.random() * 100 + '%';
+            star.style.right = Math.random() * 250 + 'px';
+            star.style.animationDelay = Math.random() * 3 + 's';
+            document.body.appendChild(star); // Note: document.body might need adjustment if body tag is removed
+        }
+        
+        // Add planets
+        for (let i = 0; i < 3; i++) {
+            const planet = document.createElement('div');
+            planet.className = 'celestial-planet';
+            const size = Math.random() * 40 + 20;
+            planet.style.width = size + 'px';
+            planet.style.height = size + 'px';
+            planet.style.top = Math.random() * 100 + '%';
+            planet.style.right = Math.random() * 300 + 'px';
+            planet.style.background = `rgba(${Math.floor(Math.random() * 100 + 100)}, ${Math.floor(Math.random() * 100 + 100)}, ${Math.floor(Math.random() * 150 + 100)}, 0.15)`;
+            document.body.appendChild(planet); // Note: document.body might need adjustment
+        }
+    }
+
+    // Timer state
+    let timerState = {
+        isRunning: false,
+        startTime: null,
+        timeRemaining: 10000, // 10 seconds in milliseconds
+        initialTime: 10000, // Store the initial time for percentage calculations
+        intervalId: null
+    };
+    
+    // Update timer display
+    function updateTimerDisplay() {
+        const timerDisplay = document.getElementById('timer-display');
+        const timerProgress = document.getElementById('timer-progress-inner');
+        const timerHud = document.getElementById('timer-hud');
+        
+        // Guard against null elements during initialization or race conditions
+        if (!timerDisplay || !timerProgress || !timerHud) {
+            console.warn("Timer UI elements not found yet.");
+            return; 
+        }
+        
+        // Calculate remaining time in seconds (with 1 decimal place)
+        const secondsRemaining = (timerState.timeRemaining / 1000).toFixed(1);
+        
+        // Format display (MM:SS) -> Just show seconds now for simplicity
+        timerDisplay.textContent = secondsRemaining < 10 ? `0${secondsRemaining}` : secondsRemaining;
+        
+        // Update progress bar (percentage of time remaining)
+        const percentRemaining = (timerState.timeRemaining / timerState.initialTime) * 100;
+        timerProgress.style.width = `${percentRemaining}%`;
+        
+        // Add warning class when less than 15 seconds remain
+        if (timerState.timeRemaining <= 15000) { // Warning at 15 seconds
+            timerHud.classList.add('warning');
+        } else {
+            timerHud.classList.remove('warning');
+        }
+        
+        // Check if timer has expired
+        if (timerState.timeRemaining <= 0) {
+            if (timerState.intervalId) clearInterval(timerState.intervalId);
+            timerState.isRunning = false;
+            timerState.timeRemaining = 0;
+            
+            // Stop background music immediately when timer hits zero
+            console.log('CRITICAL: Timer reached zero - requesting immediate music stop');
+            hytopia.sendData({
+                type: 'oxygen-depleted',
+                stopMusicImmediately: true,
+                timeOfDeath: Date.now() // Add timestamp for debugging
+            });
+            
+            // Immediately hide the timer HUD for better UX
+            const timerHud = document.getElementById('timer-hud');
+            if(timerHud) timerHud.classList.remove('active');
+            
+            // Don't show death overlay here - the server will send a message
+            // to display it after processing the oxygen depletion
+        }
+    }
+    
+    // Start the countdown timer
+    function startTimer(initialTimeInSeconds = 10) {
+        // Reset timer state
+        timerState.isRunning = true;
+        timerState.startTime = Date.now();
+        timerState.timeRemaining = initialTimeInSeconds * 1000; // Convert seconds to milliseconds
+        timerState.initialTime = initialTimeInSeconds * 1000; // Store initial time for percentage calculations
+        
+        console.log(`Starting timer with ${initialTimeInSeconds} seconds`);
+        
+        // Show timer HUD
+        const timerHud = document.getElementById('timer-hud');
+        if (timerHud) timerHud.classList.add('active');
+        
+        // Hide death overlay if visible
+        const deathOverlay = document.getElementById('death-overlay');
+        if (deathOverlay) deathOverlay.classList.remove('active');
+        
+        // Clear any existing interval
+        if (timerState.intervalId) {
+            clearInterval(timerState.intervalId);
+        }
+        
+        // Update display immediately
+        updateTimerDisplay();
+        
+        // Start interval to update timer
+        timerState.intervalId = setInterval(() => {
+            if (timerState.isRunning) {
+                // Calculate time remaining
+                const timeElapsed = Date.now() - timerState.startTime;
+                timerState.timeRemaining = Math.max(0, timerState.initialTime - timeElapsed);
+                
+                // Update display
+                updateTimerDisplay();
+            }
+        }, 100); // Update every 100ms for smooth countdown
+    }
+    
+    // Stop the timer
+    function stopTimer() {
+        if (timerState.intervalId) {
+            clearInterval(timerState.intervalId);
+            timerState.intervalId = null; // Clear intervalId after stopping
+        }
+        timerState.isRunning = false;
+        
+        // Hide timer HUD
+        const timerHud = document.getElementById('timer-hud');
+        if(timerHud) timerHud.classList.remove('active');
+    }
+    
+    // Show death overlay
+    function showDeathOverlay() {
+        const deathOverlay = document.getElementById('death-overlay');
+        if(deathOverlay) deathOverlay.classList.add('active');
+        
+        // Hide timer HUD
+        const timerHud = document.getElementById('timer-hud');
+        if(timerHud) timerHud.classList.remove('active');
+    }
+    
+    // Handle restart button click
+    function handleRestart() {
+        // Send message to server to respawn player
+        hytopia.sendData({
+            type: 'player-restart'
+        });
+        
+        // Hide death overlay
+        const deathOverlay = document.getElementById('death-overlay');
+        if(deathOverlay) deathOverlay.classList.remove('active');
+    }
+    
+    // Handle continue button click (from win screen)
+    function handleContinue() {
+        try {
+            hytopia.sendData({ type: 'player-restart' });
+        } catch (error) {
+            // Keep error log
+            console.error("[ERROR] Failed to send player-restart message:", error);
+        }
+        
+        const winScreen = document.getElementById('win-screen');
+        if(winScreen) {
+            winScreen.classList.remove('active');
+        } else {
+            // Keep warn log
+            console.warn("Win screen element not found when trying to hide.");
+        }
+    }
+    
+    // Handle quit button click
+    function handleQuit() {
+        // Send message to server to disconnect player
+        hytopia.sendData({
+            type: 'player-quit'
+        });
+    }
+    
+    // Show win screen
+    function showWinScreen(data) {
+        const winScreen = document.getElementById('win-screen');
+        if (winScreen) {
+            // Set completion time on the screen
+            const timeDisplay = document.getElementById('win-time-display');
+            if (timeDisplay && data.completionTime) {
+                timeDisplay.textContent = data.completionTime;
+            }
+            
+            // Set best time if provided
+            const bestTimeDisplay = document.getElementById('best-time-display');
+            if (bestTimeDisplay && data.bestTime) {
+                bestTimeDisplay.textContent = data.bestTime;
+            }
+            
+            // Make the win screen visible with animation
+            winScreen.classList.add('active');
+            
+            // Add particles with a slight delay for dramatic effect
+            setTimeout(() => {
+                createConfettiEffect();
+            }, 300);
+        }
+    }
+    
+    // Create confetti particles for win screen
+    function createConfettiEffect() {
+        const confettiContainer = document.getElementById('confetti-container');
+        if (!confettiContainer) return;
+        
+        // Clear any existing confetti
+        confettiContainer.innerHTML = '';
+        
+        // Create new confetti particles - increased count for more impressive effect
+        for (let i = 0; i < 200; i++) {
+            const confetti = document.createElement('div');
+            
+            // Add variety with different confetti types
+            const confettiType = Math.random() > 0.7 ? 'confetti-star' : 
+                               (Math.random() > 0.4 ? 'confetti-particle' : 'confetti-ribbon');
+            confetti.className = confettiType;
+            
+            // Randomize properties
+            const size = Math.random() * 15 + 5;
+            confetti.style.width = `${size}px`;
+            confetti.style.height = `${size}px`;
+            
+            // Random positions - spread across entire screen
+            confetti.style.left = `${Math.random() * 100}%`;
+            confetti.style.top = `${Math.random() * 60 - 300}px`; // Start higher above the screen
+            
+            // Random colors - expanded cyber theme colors
+            const colors = ['#00ffff', '#ff00ff', '#ffff00', '#00ff00', '#ff3000', '#0088ff', '#ff88ff', '#88ff00'];
+            confetti.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+            
+            // Random rotation, delay and duration for more varied animation
+            confetti.style.animationDelay = `${Math.random() * 4}s`;
+            confetti.style.animationDuration = `${5 + Math.random() * 7}s`;
+            confetti.style.transform = `rotate(${Math.random() * 360}deg)`;
+            
+            confettiContainer.appendChild(confetti);
+        }
+        
+        // Add special larger celebration elements
+        for (let i = 0; i < 15; i++) {
+            const specialConfetti = document.createElement('div');
+            specialConfetti.className = 'confetti-special';
+            
+            // Larger size for special elements
+            const size = Math.random() * 30 + 20;
+            specialConfetti.style.width = `${size}px`;
+            specialConfetti.style.height = `${size}px`;
+            
+            // Position them across the screen
+            specialConfetti.style.left = `${Math.random() * 90 + 5}%`;
+            specialConfetti.style.top = `${Math.random() * 50 - 200}px`;
+            
+            // Use gradient background for special elements
+            const gradientAngle = Math.floor(Math.random() * 360);
+            const color1 = Math.random() > 0.5 ? '#00ffff' : '#ff00ff';
+            const color2 = Math.random() > 0.5 ? '#ffff00' : '#00ff00';
+            specialConfetti.style.background = `linear-gradient(${gradientAngle}deg, ${color1}, ${color2})`;
+            
+            // Add glow effect
+            specialConfetti.style.boxShadow = `0 0 10px ${color1}, 0 0 20px ${color2}`;
+            
+            // Random animation delay and duration
+            specialConfetti.style.animationDelay = `${Math.random() * 3}s`;
+            specialConfetti.style.animationDuration = `${6 + Math.random() * 6}s`;
+            
+            confettiContainer.appendChild(specialConfetti);
+        }
+        
+        // Create a central burst effect
+        const burstContainer = document.createElement('div');
+        burstContainer.className = 'confetti-burst-container';
+        confettiContainer.appendChild(burstContainer);
+    }
+    
+    // Create bubble effect for potion collection
+    function createBubbleEffect() {
+        let bubbleContainer = document.getElementById('bubble-container');
+        if (!bubbleContainer) {
+            bubbleContainer = document.createElement('div');
+            bubbleContainer.id = 'bubble-container';
+            bubbleContainer.className = 'bubble-container';
+            document.body.appendChild(bubbleContainer);
+        }
+        
+        const timerHud = document.getElementById('timer-hud');
+        let originX = window.innerWidth / 2; // Default to center of screen
+        let originY = window.innerHeight - 80; // Default to bottom area
+        
+        if (timerHud && timerHud.classList.contains('active')) {
+            const timerRect = timerHud.getBoundingClientRect();
+            originX = timerRect.left + timerRect.width / 2;
+            originY = timerRect.top + timerRect.height / 2;
+        }
+        
+        const bubbleCount = 75;
+        
+        for (let i = 0; i < bubbleCount; i++) {
+            const bubble = document.createElement('div');
+            bubble.className = 'bubble';
+            
+            const size = Math.random() * 20 + 10;
+            bubble.style.width = `${size}px`;
+            bubble.style.height = `${size}px`;
+            
+            bubble.style.left = `${originX}px`;
+            bubble.style.top = `${originY}px`;
+            
+            const angle = Math.random() * Math.PI * 2; // 0 to 2π
+            const speed = 8 + Math.random() * 18;
+            
+            bubble.dataset.angle = angle;
+            bubble.dataset.speed = speed;
+            bubble.dataset.friction = 0.96 + Math.random() * 0.02;
+            
+            bubbleContainer.appendChild(bubble);
+            
+            setTimeout(() => {
+                if (bubble.isConnected) {
+                    animateBubble(bubble, originX, originY);
+                    
+                    const popTime = 800 + Math.random() * 1200;
+                    setTimeout(() => {
+                        if (bubble.isConnected) {
+                            bubble.classList.add('pop');
+                            
+                            setTimeout(() => {
+                                if (bubble.isConnected && bubble.parentNode) {
+                                    bubble.parentNode.removeChild(bubble);
+                                }
+                            }, 300);
+                        }
+                    }, popTime);
+                }
+            }, i * 10); // Reduced stagger time for quicker appearance
+        }
+    }
+    
+    // Create blood splatter effect for zombie hits
+    function createBloodSplatterEffect() {
+        let splatterContainer = document.getElementById('blood-splatter-container');
+        if (!splatterContainer) {
+            splatterContainer = document.createElement('div');
+            splatterContainer.id = 'blood-splatter-container';
+            splatterContainer.className = 'blood-splatter-container';
+            document.body.appendChild(splatterContainer);
+        }
+        
+        const dropCount = 40;
+        
+        const flashEffect = document.createElement('div');
+        flashEffect.className = 'blood-flash';
+        splatterContainer.appendChild(flashEffect);
+        
+        setTimeout(() => {
+            if (flashEffect.parentNode) {
+                flashEffect.parentNode.removeChild(flashEffect);
+            }
+        }, 500);
+        
+        for (let i = 0; i < dropCount; i++) {
+            const drop = document.createElement('div');
+            drop.className = 'blood-drop';
+            
+            const size = Math.random() * 30 + 10;
+            drop.style.width = `${size}px`;
+            drop.style.height = `${size}px`;
+            
+            let startX, startY;
+            const edge = Math.floor(Math.random() * 4); // 0: top, 1: right, 2: bottom, 3: left
+            
+            switch (edge) {
+                case 0: // top
+                    startX = Math.random() * window.innerWidth;
+                    startY = -size;
+                    break;
+                case 1: // right
+                    startX = window.innerWidth + size;
+                    startY = Math.random() * window.innerHeight;
+                    break;
+                case 2: // bottom
+                    startX = Math.random() * window.innerWidth;
+                    startY = window.innerHeight + size;
+                    break;
+                case 3: // left
+                    startX = -size;
+                    startY = Math.random() * window.innerHeight;
+                    break;
+            }
+            
+            drop.style.left = `${startX}px`;
+            drop.style.top = `${startY}px`;
+            
+            const centerX = window.innerWidth / 2;
+            const centerY = window.innerHeight / 2;
+            const angleToCenter = Math.atan2(centerY - startY, centerX - startX);
+            const angle = angleToCenter + (Math.random() - 0.5) * 1.5;
+            
+            const speed = 5 + Math.random() * 15;
+            drop.dataset.angle = angle;
+            drop.dataset.speed = speed;
+            drop.dataset.friction = 0.92 + Math.random() * 0.03;
+            
+            drop.style.opacity = 0.4 + Math.random() * 0.6;
+            
+            splatterContainer.appendChild(drop);
+            
+            setTimeout(() => {
+                if (drop.isConnected) {
+                    animateBloodDrop(drop, startX, startY);
+                    
+                    const splatTime = 400 + Math.random() * 800;
+                    setTimeout(() => {
+                        if (drop.isConnected) {
+                            drop.classList.add('splat');
+                            
+                            setTimeout(() => {
+                                if (drop.isConnected && drop.parentNode) {
+                                    drop.parentNode.removeChild(drop);
+                                }
+                            }, 2000); // Longer fade-out for blood
+                        }
+                    }, splatTime);
+                }
+            }, i * 5);
+        }
+    }
+    
+    // Animation function for blood drops
+    function animateBloodDrop(drop, startX, startY) {
+        if (!drop.dataset.posX) {
+            drop.dataset.posX = startX;
+            drop.dataset.posY = startY;
+        }
+        
+        const angle = parseFloat(drop.dataset.angle);
+        const speed = parseFloat(drop.dataset.speed);
+        const friction = parseFloat(drop.dataset.friction);
+        
+        const newSpeed = speed * friction;
+        const dx = Math.cos(angle) * newSpeed;
+        const dy = Math.sin(angle) * newSpeed;
+        
+        const posX = parseFloat(drop.dataset.posX) + dx;
+        const posY = parseFloat(drop.dataset.posY) + dy;
+        
+        drop.dataset.posX = posX;
+        drop.dataset.posY = posY;
+        drop.dataset.speed = newSpeed;
+        
+        drop.style.left = `${posX}px`;
+        drop.style.top = `${posY}px`;
+        
+        drop.dataset.angle = angle + (Math.random() - 0.5) * 0.1;
+        
+        if (drop.isConnected && !drop.classList.contains('splat') && newSpeed > 0.5) {
+            requestAnimationFrame(() => animateBloodDrop(drop, startX, startY));
+        }
+    }
+    
+    // Individual bubble animation function - more reliable than requestAnimationFrame for many bubbles
+    function animateBubble(bubble, startX, startY) {
+        if (!bubble.dataset.posX) {
+            bubble.dataset.posX = startX;
+            bubble.dataset.posY = startY;
+        }
+        
+        const angle = parseFloat(bubble.dataset.angle);
+        const speed = parseFloat(bubble.dataset.speed);
+        const friction = parseFloat(bubble.dataset.friction);
+        
+        const newSpeed = speed * friction;
+        const dx = Math.cos(angle) * newSpeed;
+        const dy = Math.sin(angle) * newSpeed;
+        
+        const posX = parseFloat(bubble.dataset.posX) + dx;
+        const posY = parseFloat(bubble.dataset.posY) + dy;
+        
+        bubble.dataset.posX = posX;
+        bubble.dataset.posY = posY;
+        bubble.dataset.speed = newSpeed;
+        
+        bubble.style.left = `${posX}px`;
+        bubble.style.top = `${posY}px`;
+        
+        bubble.dataset.angle = angle + (Math.random() - 0.5) * 0.1;
+        
+        if (bubble.isConnected && !bubble.classList.contains('pop') && newSpeed > 0.5) {
+            requestAnimationFrame(() => animateBubble(bubble, startX, startY));
+        }
+    }
+    
+    // --- Initialization Logic (runs immediately when script loads) ---
+    
+    // Set up button event listeners
+    function setupButtonListeners() {
+        const restartButton = document.getElementById('restart-button');
+        const quitButton = document.getElementById('quit-button');
+        const continueButton = document.getElementById('continue-button');
+        
+        if (restartButton) {
+            restartButton.addEventListener('click', handleRestart);
+        } else {
+            console.warn("Restart button not found during setup.");
+        }
+        
+        if (quitButton) {
+            quitButton.addEventListener('click', handleQuit);
+        } else {
+            console.warn("Quit button not found during setup.");
+        }
+
+        if (continueButton) {
+            continueButton.addEventListener('click', handleContinue);
+        } else {
+            console.warn("Continue button not found during setup.");
+        }
+    }
+
+    let uiInitialized = false;
+            
+    // Listen for messages from the server
+    hytopia.onData(data => {
+        if (!uiInitialized) {
+            setupButtonListeners();
+            uiInitialized = true;
+        }
+        
+        if (data.type === 'start-countdown') {
+            const initialTime = data.initialTime || 10;
+            startTimer(initialTime);
+        }
+        
+        if (data.type === 'stop-countdown') {
+            stopTimer();
+        }
+        
+        if (data.type === 'player-died') {
+            showDeathOverlay();
+        }
+        
+        if (data.type === 'reset-timer') {
+            stopTimer();
+            timerState.isRunning = false;
+            timerState.startTime = null;
+            timerState.timeRemaining = 10000; // Reset to 10 seconds
+            timerState.initialTime = 10000;
+            updateTimerDisplay(); // Update display to show reset time
+        }
+        
+        if (data.type === 'zombie-damage') {
+            console.log(`Zombie attack! Reducing timer by ${data.timeReduction} seconds`);
+            
+            if (timerState.isRunning) {
+                // Apply damage to timer (convert seconds to milliseconds)
+                const reductionMs = data.timeReduction * 1000;
+                timerState.timeRemaining = Math.max(0, timerState.timeRemaining - reductionMs);
+                
+                // Update the start time to account for the reduced time
+                timerState.startTime = Date.now() - (timerState.initialTime - timerState.timeRemaining);
+                
+                // Flash the timer red briefly
+                const timerHud = document.getElementById('timer-hud');
+                if (timerHud) {
+                    timerHud.classList.add('damage');
+                    setTimeout(() => {
+                        timerHud.classList.remove('damage');
+                    }, 500);
+                }
+                
+                // Create blood splatter effect
+                try {
+                    // Use setTimeout to ensure this runs separately from UI updates
+                    setTimeout(() => createBloodSplatterEffect(), 0);
+                } catch (e) {
+                    console.error('Error creating blood splatter effect:', e);
+                    // Try again with a delay
+                    setTimeout(() => createBloodSplatterEffect(), 100);
+                }
+                
+                // Update display immediately
+                updateTimerDisplay();
+            }
+        }
+        
+        if (data.type === 'potion-collected') {
+            console.log('Potion collected event received:', data);
+            
+            // Always create bubble effect FIRST for potion collection
+            // This ensures bubbles start appearing immediately - more forceful approach
+            try {
+                console.log('Forcing bubble effect creation');
+                setTimeout(() => createBubbleEffect(), 0); // Use setTimeout to ensure this runs separately
+                setTimeout(() => createBubbleEffect(), 50); // Add a second call to ensure effects appear
+            } catch (e) {
+                console.error('Error creating bubble effect:', e);
+                // Try again with a delay
+                setTimeout(() => createBubbleEffect(), 100);
+            }
+            
+            // Now handle the timer updates
+            if (data.timeBonus) {
+                console.log('Adding time bonus:', data.timeBonus);
+                if (timerState.isRunning) {
+                    // Add the bonus time
+                    timerState.timeRemaining += data.timeBonus * 1000;
+                    
+                    // Update the start time to account for the added time
+                    timerState.startTime = Date.now() - (timerState.initialTime - timerState.timeRemaining);
+                    
+                    // Update display immediately
+                    updateTimerDisplay();
+                }
+            }
+        }
+        
+        // Process 'set-timer' messages (for backwards compatibility)
+        if (data.type === 'set-timer' && data.value) {
+            console.log('Setting timer to:', data.value);
+            if (timerState.isRunning) {
+                // Convert string to number and then to milliseconds
+                const newTimeMs = parseFloat(data.value) * 1000;
+                timerState.timeRemaining = newTimeMs;
+                
+                // Update the start time
+                timerState.startTime = Date.now() - (timerState.initialTime - timerState.timeRemaining);
+                
+                // Update display immediately
+                updateTimerDisplay();
+            }
+        }
+        
+        if (data.type === 'player-won') {
+            // Show win screen with completion time
+            showWinScreen(data);
+        }
+        
+        // --- NEW HANDLERS for welcome screen ---
+        else if (data.type === 'show-welcome') {
+            console.log("Received show-welcome from server.");
+            const welcomePopup = document.getElementById('welcome-popup');
+            if (welcomePopup) {
+                welcomePopup.classList.add('active');
+                console.log("Welcome popup activated.");
+            }
+        } else if (data.type === 'hide-welcome') {
+            console.log("Received hide-welcome from server.");
+            const welcomePopup = document.getElementById('welcome-popup');
+            if (welcomePopup && welcomePopup.classList.contains('active')) {
+                welcomePopup.classList.remove('active');
+                console.log("Welcome popup deactivated.");
+            }
+        }
+        // --- END NEW HANDLERS ---
+    });
+
+    // --- Leaderboard Handling ---
+    const leaderboardElement = document.getElementById('leaderboard');
+    const leaderboardListElement = document.getElementById('leaderboard-list');
+
+    // Function to format milliseconds into MM:SS:ms
+    function formatTime(milliseconds) {
+        if (typeof milliseconds !== 'number' || isNaN(milliseconds)) {
+            return '--:--:---';
+        }
+        const totalSeconds = Math.floor(milliseconds / 1000);
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        const ms = milliseconds % 1000;
+        return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}:${String(ms).padStart(3, '0')}`;
+    }
+
+    // Function to update the leaderboard UI
+    function updateLeaderboardUI(leaderboardData) {
+        if (!leaderboardElement || !leaderboardListElement || !Array.isArray(leaderboardData)) {
+            console.error('Leaderboard elements not found or invalid data:', leaderboardData);
+            return;
+        }
+
+        leaderboardListElement.innerHTML = ''; // Clear existing entries
+
+        if (leaderboardData.length === 0) {
+            leaderboardListElement.innerHTML = '<li>No times yet!</li>';
+        } else {
+            leaderboardData.forEach((entry, index) => {
+                const listItem = document.createElement('li');
+
+                const rankSpan = document.createElement('span');
+                rankSpan.className = 'leaderboard-rank';
+                rankSpan.textContent = `${index + 1}.`;
+
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'leaderboard-name';
+                nameSpan.textContent = entry.username;
+                nameSpan.title = entry.username; // Show full name on hover if truncated
+
+                const timeSpan = document.createElement('span');
+                timeSpan.className = 'leaderboard-time';
+                timeSpan.textContent = formatTime(entry.time);
+
+                listItem.appendChild(rankSpan);
+                listItem.appendChild(nameSpan);
+                listItem.appendChild(timeSpan);
+                leaderboardListElement.appendChild(listItem);
+            });
+        }
+
+        // Make leaderboard visible if it's not already
+        if (!leaderboardElement.classList.contains('visible')) {
+             setTimeout(() => { // Slight delay for transition
+                 leaderboardElement.classList.add('visible');
+             }, 100); 
+        }
+    }
+
+    // Listen for leaderboard updates from the server
+    hytopia.eventSub('update-leaderboard', (data) => {
+        console.log('Received leaderboard update:', data);
+        updateLeaderboardUI(data.leaderboard);
+    });
+
+    // -----------------------------
+
+</script>
+
+<style>
+    @font-face {
+        font-family: 'Inter';
+        src: url('{{CDN_ASSETS_URL}}/assets/ui/fonts/Inter-Regular.ttf') format('truetype');
+        font-weight: normal;
+        font-style: normal;
+    }
+    
+    @font-face {
+        font-family: 'Inter';
+        src: url('{{CDN_ASSETS_URL}}/assets/ui/fonts/Inter-Bold.ttf') format('truetype');
+        font-weight: bold;
+        font-style: normal;
+    }
+    
+    @font-face {
+        font-family: 'Inter';
+        src: url('{{CDN_ASSETS_URL}}/assets/ui/fonts/Inter-Light.ttf') format('truetype');
+        font-weight: 300;
+        font-style: normal;
+    }
+    
+    /* Base styles */
+    .ui-wrapper {
+        width: 100vw;
+        height: 100vh;
+        overflow: hidden;
+        font-family: 'Inter', sans-serif;
+        position: relative;
+    }
+
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    
+    /* Timer HUD - Hyper-advanced holographic design */
+    .timer-hud {
+        position: absolute;
+        bottom: 30px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(20, 10, 40, 0.7); /* Darker purple base */
+        border-radius: 18px;
+        color: #fff;
+        padding: 5px;
+        width: 40vw;
+        z-index: 10;
+        display: none;
+        overflow: visible;
+    }
+    
+    /* Create outer glow container with neon colors - Remove rotating animation */
+    .timer-hud::before {
+        content: '';
+        position: absolute;
+        top: -3px;
+        left: -3px;
+        right: -3px;
+        bottom: -3px;
+        border-radius: 20px;
+        background: linear-gradient(135deg, 
+            rgba(255, 0, 255, 0) 0%,
+            rgba(255, 0, 255, 0.4) 50%, 
+            rgba(0, 255, 255, 0) 100%);
+        z-index: -1;
+        opacity: 0.8;
+        /* Removed the rotate-glow animation */
+    }
+    
+    /* Create an additional pulsing outer border */
+    .timer-hud::after {
+        content: '';
+        position: absolute;
+        top: -5px;
+        left: -5px;
+        right: -5px;
+        bottom: -5px;
+        border-radius: 22px;
+        border: 1px solid rgba(0, 255, 255, 0.4);
+        z-index: -2;
+        animation: pulse-border 2s ease-in-out infinite;
+    }
+    
+    @keyframes pulse-border {
+        0%, 100% { opacity: 0.3; border-color: rgba(0, 255, 255, 0.3); }
+        50% { opacity: 0.8; border-color: rgba(255, 0, 255, 0.5); }
+    }
+    
+    .timer-hud.active {
+        display: block;
+        animation: hud-appear 0.5s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+    }
+    
+    @keyframes hud-appear {
+        0% { opacity: 0; transform: translateX(-50%) translateY(50px); }
+        50% { opacity: 1; transform: translateX(-50%) translateY(-10px); }
+        70% { transform: translateX(-50%) translateY(7px); }
+        85% { transform: translateX(-50%) translateY(-5px); }
+        100% { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+    
+    /* Inner frame with hexagonal design */
+    .timer-inner-frame {
+        background: rgba(25, 10, 40, 0.85);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 0, 255, 0.5);
+        border-radius: 15px;
+        padding: 15px 25px;
+        position: relative;
+        box-shadow: 
+            inset 0 0 20px rgba(60, 0, 90, 0.5),
+            0 0 30px rgba(255, 0, 255, 0.2);
+        overflow: hidden;
+    }
+    
+    /* Hexagonal pattern overlay */
+    .hex-pattern {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        opacity: 0.1;
+        pointer-events: none;
+        background-image: 
+            repeating-linear-gradient(0deg, transparent, transparent 10px, 
+            rgba(0, 255, 255, 0.2) 10px, rgba(0, 255, 255, 0.2) 12px),
+            repeating-linear-gradient(60deg, transparent, transparent 10px, 
+            rgba(255, 0, 255, 0.2) 10px, rgba(255, 0, 255, 0.2) 12px),
+            repeating-linear-gradient(120deg, transparent, transparent 10px, 
+            rgba(255, 255, 0, 0.1) 10px, rgba(255, 255, 0, 0.1) 12px);
+    }
+    
+    /* Circuit board trace effects */
+    .circuit-traces {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        overflow: hidden;
+        opacity: 0.2;
+    }
+    
+    .circuit-trace {
+        position: absolute;
+        height: 1px;
+        width: 100px;
+        animation: trace-move 4s linear infinite;
+        transform-origin: left center;
+    }
+    
+    .trace-1 {
+        top: 20%;
+        left: 0;
+        width: 70%;
+        animation-delay: 0s;
+        background: linear-gradient(90deg, rgba(0, 255, 255, 0), rgba(0, 255, 255, 1), rgba(0, 255, 255, 0));
+    }
+    
+    .trace-2 {
+        top: 40%;
+        left: 20%;
+        width: 40%;
+        animation-delay: 1s;
+        background: linear-gradient(90deg, rgba(255, 0, 255, 0), rgba(255, 0, 255, 1), rgba(255, 0, 255, 0));
+    }
+    
+    .trace-3 {
+        top: 70%;
+        left: 30%;
+        width: 60%;
+        animation-delay: 2s;
+        background: linear-gradient(90deg, rgba(255, 255, 0, 0), rgba(255, 255, 0, 1), rgba(255, 255, 0, 0));
+    }
+    
+    .trace-4 {
+        top: 90%;
+        left: 10%;
+        width: 90%;
+        animation-delay: 3s;
+        background: linear-gradient(90deg, rgba(0, 255, 0, 0), rgba(0, 255, 0, 1), rgba(0, 255, 0, 0));
+    }
+    
+    @keyframes trace-move {
+        0% { transform: translateX(-100px) scaleX(1); }
+        100% { transform: translateX(300px) scaleX(0.7); }
+    }
+    
+    .timer-title {
+        font-size: 14px;
+        text-align: center;
+        text-transform: uppercase;
+        letter-spacing: 4px;
+        color: #00ffff; /* Cyan */
+        text-shadow: 0 0 5px rgba(0, 255, 255, 0.8);
+        margin-bottom: 2px;
+        position: relative;
+        font-weight: 300;
+    }
+    
+    /* Particle burst effect for title */
+    .timer-title::after {
+        content: '';
+        position: absolute;
+        width: 5px;
+        height: 1px;
+        background: rgba(0, 255, 255, 0.7);
+        left: 50%;
+        bottom: -3px;
+        animation: title-particle 2s ease-out infinite;
+    }
+    
+    @keyframes title-particle {
+        0% { width: 5px; left: 50%; transform: translateX(-50%); opacity: 0.7; }
+        100% { width: 80%; left: 50%; transform: translateX(-50%); opacity: 0; }
+    }
+    
+    /* Timer display - ultra modern holographic style */
+    .timer-display {
+        font-size: 48px;
+        font-weight: 900;
+        text-align: center;
+        color: #ffffff;
+        text-shadow: 
+            0 0 10px rgba(255, 0, 255, 1.0),
+            0 0 20px rgba(255, 0, 255, 0.8),
+            0 0 30px rgba(255, 0, 255, 0.6);
+        letter-spacing: 2px;
+        margin: 0px 0 5px;
+        transform: perspective(500px) rotateX(5deg);
+        position: relative;
+    }
+    
+    /* Digital display effect */
+    .timer-display::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: linear-gradient(180deg, 
+            rgba(255, 255, 255, 0.1) 0%, 
+            transparent 10%, 
+            transparent 90%, 
+            rgba(255, 255, 255, 0.1) 100%);
+        animation: scan-line 2s linear infinite;
+        pointer-events: none;
+    }
+    
+    @keyframes scan-line {
+        0% { transform: translateY(-100%); opacity: 0; }
+        10% { opacity: 0.8; }
+        80% { opacity: 0.8; }
+        100% { transform: translateY(100%); opacity: 0; }
+    }
+    
+    /* Advanced oxygen bar */
+    .timer-progress {
+        width: 100%;
+        height: 18px;
+        background: rgba(20, 10, 40, 0.7);
+        border-radius: 9px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 0, 255, 0.3);
+        position: relative;
+        box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.7);
+    }
+    
+    /* Layer effect for depth */
+    .timer-progress::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 50%;
+        background: linear-gradient(to bottom, 
+            rgba(255, 255, 255, 0.1) 0%, 
+            transparent 100%);
+        z-index: 2;
+        pointer-events: none;
+    }
+    
+    .timer-progress-inner {
+        height: 100%;
+        background: linear-gradient(90deg, 
+            rgba(0, 255, 255, 0.9), 
+            rgba(0, 255, 255, 1), 
+            rgba(0, 200, 255, 0.9));
+        width: 100%;
+        transition: width 0.1s linear;
+        box-shadow: 0 0 15px rgba(0, 255, 255, 0.5);
+        position: relative;
+        overflow: hidden;
+    }
+    
+    /* Layered animated pulses */
+    .timer-progress-inner::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: repeating-linear-gradient(
+            90deg,
+            transparent,
+            transparent 10px,
+            rgba(255, 255, 255, 0.1) 10px,
+            rgba(255, 255, 255, 0.1) 20px
+        );
+        background-size: 200% 100%;
+        animation: slide-stripes 5s linear infinite;
+    }
+    
+    /* Advanced shine effect */
+    .timer-progress-inner::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: linear-gradient(90deg, 
+                                   transparent 0%, 
+                                   rgba(255, 255, 255, 0.4) 50%, 
+                                   transparent 100%);
+        transform: translateX(-100%);
+        animation: progress-shine 1.5s ease-in-out infinite;
+    }
+    
+    @keyframes slide-stripes {
+        0% { background-position: 0 0; }
+        100% { background-position: 200% 0; }
+    }
+    
+    @keyframes progress-shine {
+        0% { transform: translateX(-100%); }
+        100% { transform: translateX(100%); }
+    }
+    
+    /* Oxygen particles animation */
+    .oxygen-particles {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 30px;
+        pointer-events: none;
+        overflow: hidden;
+    }
+    
+    .oxygen-particle {
+        position: absolute;
+        bottom: -5px;
+        background: rgba(0, 255, 255, 0.7);
+        border-radius: 50%;
+        width: 4px;
+        height: 4px;
+        animation: float-particle 3s ease-in infinite;
+    }
+    
+    @keyframes float-particle {
+        0% { transform: translateY(0) scale(0); opacity: 0; }
+        20% { transform: translateY(-10px) scale(1); opacity: 0.8; }
+        100% { transform: translateY(-30px) scale(0); opacity: 0; }
+    }
+    
+    /* Warning state with enhanced effects */
+    .timer-hud.warning .timer-inner-frame {
+        border-color: rgba(255, 255, 0, 0.8);
+        animation: warning-pulse 0.5s infinite alternate;
+    }
+    
+    .timer-hud.warning .timer-display {
+        color: #ffff00;
+        text-shadow: 0 0 15px rgba(255, 255, 0, 1.0),
+                    0 0 25px rgba(255, 200, 0, 0.8),
+                    0 0 35px rgba(255, 150, 0, 0.6);
+        animation: scale-pulse 0.5s infinite alternate cubic-bezier(0.455, 0.03, 0.515, 0.955);
+    }
+    
+    .timer-hud.warning .timer-progress-inner {
+        background: linear-gradient(90deg, 
+            rgba(255, 255, 0, 0.9), 
+            rgba(255, 200, 0, 1), 
+            rgba(255, 150, 0, 0.9));
+        animation: warning-flow 2s linear infinite;
+    }
+    
+    @keyframes warning-pulse {
+        0% { box-shadow: 0 0 15px rgba(255, 255, 0, 0.3); }
+        100% { box-shadow: 0 0 25px rgba(255, 255, 0, 0.8); }
+    }
+    
+    @keyframes scale-pulse {
+        0% { transform: perspective(500px) rotateX(5deg) scale(1); }
+        100% { transform: perspective(500px) rotateX(5deg) scale(1.08); }
+    }
+    
+    @keyframes warning-flow {
+        0% { background-position: 0% center; }
+        100% { background-position: 200% center; }
+    }
+    
+    /* Damage animation when hit by a zombie */
+    .timer-hud.damage {
+        animation: damage-impact 0.5s ease;
+    }
+    
+    @keyframes damage-impact {
+        0% { transform: translateX(-50%) translateY(0) rotate(0deg); filter: saturate(100%); }
+        15% { transform: translateX(-50%) translateY(0) rotate(-1deg); filter: saturate(200%); }
+        30% { transform: translateX(-50%) translateY(0) rotate(1deg); filter: saturate(300%) brightness(1.5); }
+        45% { transform: translateX(-50%) translateY(0) rotate(-1deg); filter: saturate(250%); }
+        60% { transform: translateX(-50%) translateY(0) rotate(1deg); filter: saturate(200%); }
+        75% { transform: translateX(-50%) translateY(0) rotate(-0.5deg); filter: saturate(150%); }
+        100% { transform: translateX(-50%) translateY(0) rotate(0deg); filter: saturate(100%); }
+    }
+    
+    .timer-hud.damage .timer-inner-frame {
+        animation: damage-flash 0.5s ease;
+    }
+    
+    @keyframes damage-flash {
+        0% { background: rgba(25, 10, 40, 0.85); border-color: rgba(255, 0, 255, 0.5); }
+        25% { background: rgba(150, 0, 0, 0.9); border-color: rgba(255, 0, 0, 0.9); }
+        100% { background: rgba(25, 10, 40, 0.85); border-color: rgba(255, 0, 255, 0.5); }
+    }
+    
+    /* Corner accents */
+    .corner-accent {
+        position: absolute;
+        width: 15px;
+        height: 15px;
+        border-style: solid;
+        border-width: 2px;
+        border-color: rgba(255, 0, 255, 0.5);
+        z-index: 2;
+    }
+    
+    .corner-tl {
+        top: -2px;
+        left: -2px;
+        border-right: none;
+        border-bottom: none;
+        border-radius: 5px 0 0 0;
+    }
+    
+    .corner-tr {
+        top: -2px;
+        right: -2px;
+        border-left: none;
+        border-bottom: none;
+        border-radius: 0 5px 0 0;
+    }
+    
+    .corner-bl {
+        bottom: -2px;
+        left: -2px;
+        border-right: none;
+        border-top: none;
+        border-radius: 0 0 0 5px;
+    }
+    
+    .corner-br {
+        bottom: -2px;
+        right: -2px;
+        border-left: none;
+        border-top: none;
+        border-radius: 0 0 5px 0;
+    }
+    
+    /* Enhanced corner indicators */
+    .corner-indicator {
+        position: absolute;
+        width: 6px;
+        height: 6px;
+        background: rgba(0, 255, 255, 0.8);
+        border-radius: 50%;
+        box-shadow: 0 0 8px rgba(0, 255, 255, 1);
+        z-index: 3;
+    }
+    
+    .indicator-tl {
+        top: -3px;
+        left: -3px;
+        animation: blink-indicator 3s infinite;
+        background: rgba(255, 0, 255, 0.8);
+        box-shadow: 0 0 8px rgba(255, 0, 255, 1);
+    }
+    
+    .indicator-tr {
+        top: -3px;
+        right: -3px;
+        animation: blink-indicator 3s infinite 0.5s;
+    }
+    
+    .indicator-bl {
+        bottom: -3px;
+        left: -3px;
+        animation: blink-indicator 3s infinite 1s;
+        background: rgba(255, 255, 0, 0.8);
+        box-shadow: 0 0 8px rgba(255, 255, 0, 1);
+    }
+    
+    .indicator-br {
+        bottom: -3px;
+        right: -3px;
+        animation: blink-indicator 3s infinite 1.5s;
+        background: rgba(0, 255, 0, 0.8);
+        box-shadow: 0 0 8px rgba(0, 255, 0, 1);
+    }
+    
+    @keyframes blink-indicator {
+        0%, 100% { opacity: 0.4; transform: scale(1); }
+        50% { opacity: 1; transform: scale(1.5); }
+    }
+    
+    /* Enhanced death overlay */
+    .death-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(80, 0, 0, 0.3); /* Reduced opacity from 0.4 to 0.3 */
+        backdrop-filter: blur(8px) contrast(1.1); /* Reduced contrast from 1.2 to 1.1 */
+        z-index: 100;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.5s ease-in-out;
+    }
+    
+    .death-overlay.active {
+        opacity: 1;
+        pointer-events: all;
+        animation: death-background 5s infinite alternate;
+    }
+    
+    @keyframes death-background {
+        0% { background: rgba(80, 0, 0, 0.3); backdrop-filter: blur(8px) contrast(1.1); } /* Reduced opacity */
+        100% { background: rgba(150, 0, 0, 0.4); backdrop-filter: blur(12px) contrast(1.3); } /* Reduced opacity from 0.5 to 0.4 */
+    }
+    
+    .death-message {
+        font-size: 72px;
+        font-weight: 900;
+        color: white;
+        text-shadow: 0 0 20px rgba(255, 0, 0, 1), 
+                     0 0 40px rgba(255, 0, 0, 0.8),
+                     0 0 60px rgba(255, 0, 0, 0.5);
+        margin-bottom: 40px;
+        text-align: center;
+        letter-spacing: 3px;
+        opacity: 0;
+        line-height: 1.1; /* Added to control line spacing */
+        display: flex;
+        flex-direction: column; /* Stack text vertically */
+        animation: death-message-appear 1s ease-out forwards, 
+                   text-flicker 3s 1s infinite alternate;
+    }
+    
+    @keyframes death-message-appear {
+        0% { transform: scale(1.5); opacity: 0; filter: blur(10px); }
+        100% { transform: scale(1); opacity: 1; filter: blur(0px); }
+    }
+    
+    @keyframes text-flicker {
+        0% { text-shadow: 0 0 20px rgba(255, 0, 0, 1), 0 0 40px rgba(255, 0, 0, 0.8); }
+        100% { text-shadow: 0 0 30px rgba(255, 0, 0, 1), 0 0 60px rgba(255, 0, 0, 0.8), 0 0 90px rgba(255, 0, 0, 0.5); }
+    }
+    
+    /* Restart popup with neon styling */
+    .restart-popup {
+        background: rgba(25, 10, 30, 0.92); /* More opaque background */
+        border: 2px solid rgba(255, 0, 255, 0.7); /* Thicker border and more visible */
+        border-radius: 16px;
+        padding: 35px; /* Slightly larger padding */
+        width: 380px;
+        box-shadow: 0 0 40px rgba(255, 0, 255, 0.4), /* Enhanced glow */
+                   0 0 80px rgba(0, 0, 0, 0.6); /* Added dark outer shadow for depth */
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+        animation: float 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; /* Improved animation curve */
+        overflow: hidden;
+        transform: translateZ(50px); /* 3D effect for more depth */
+        z-index: 101; /* Ensure it's above the backdrop */
+    }
+    
+    /* Add circuit traces to popup */
+    .restart-popup::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        opacity: 0.15;
+        pointer-events: none;
+        background-image: 
+            repeating-linear-gradient(0deg, transparent, transparent 10px, 
+            rgba(0, 255, 255, 0.3) 10px, rgba(0, 255, 255, 0.3) 12px),
+            repeating-linear-gradient(60deg, transparent, transparent 10px, 
+            rgba(255, 0, 255, 0.3) 10px, rgba(255, 0, 255, 0.3) 12px);
+    }
+    
+    /* Add corner accents to popup */
+    .restart-popup::after {
+        content: '';
+        position: absolute;
+        top: -3px;
+        left: -3px;
+        right: -3px;
+        bottom: -3px;
+        border-radius: 18px;
+        background: linear-gradient(135deg, 
+            rgba(255, 0, 0, 0) 0%,
+            rgba(255, 0, 0, 0.3) 50%, 
+            rgba(255, 0, 0, 0) 100%);
+        z-index: -1;
+        opacity: 0.8;
+        animation: rotate-glow 10s linear infinite;
+    }
+    
+    .restart-popup-title {
+        font-size: 26px;
+        color: #ffffff;
+        margin-bottom: 25px;
+        text-align: center;
+        text-transform: uppercase;
+        letter-spacing: 3px;
+        text-shadow: 0 0 15px rgba(255, 0, 255, 0.8);
+    }
+    
+    .restart-buttons {
+        display: flex;
+        justify-content: space-between;
+        width: 100%;
+        margin-top: 15px;
+    }
+    
+    .restart-button, .quit-button {
+        padding: 12px 24px;
+        border-radius: 8px;
+        font-size: 16px;
+        font-weight: bold;
+        cursor: pointer;
+        transition: all 0.2s;
+        border: none;
+        outline: none;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .restart-button {
+        background: linear-gradient(to bottom, #ff3000, #ff0000);
+        color: white;
+        flex: 3;
+        margin-right: 10px;
+        border: 1px solid rgba(255, 0, 0, 0.7);
+        box-shadow: 0 0 10px rgba(255, 0, 0, 0.5);
+    }
+    
+    .restart-button::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: linear-gradient(90deg, 
+                                   transparent 0%, 
+                                   rgba(255, 255, 255, 0.2) 50%, 
+                                   transparent 100%);
+        transform: translateX(-100%);
+        animation: button-shine 2s infinite;
+    }
+    
+    @keyframes button-shine {
+        0%, 70% { transform: translateX(-100%); }
+        100% { transform: translateX(100%); }
+    }
+    
+    .restart-button:hover {
+        background: linear-gradient(to bottom, #ff5000, #ff1000);
+        transform: translateY(-2px);
+        box-shadow: 0 0 15px rgba(255, 50, 0, 0.7);
+    }
+    
+    .quit-button {
+        background: linear-gradient(to bottom, #333, #222);
+        color: #ddd;
+        flex: 2;
+        border: 1px solid rgba(255, 0, 255, 0.3);
+        box-shadow: 0 0 5px rgba(255, 0, 255, 0.3);
+    }
+    
+    .quit-button:hover {
+        background: linear-gradient(to bottom, #444, #333);
+        transform: translateY(-2px);
+        box-shadow: 0 0 10px rgba(255, 0, 255, 0.5);
+    }
+    
+    /* Animations */
+    @keyframes pulse {
+        from {
+            opacity: 1;
+        }
+        to {
+            opacity: 0.7;
+        }
+    }
+    
+    @keyframes grow {
+        from {
+            transform: scale(0.9);
+        }
+        to {
+            transform: scale(1);
+        }
+    }
+    
+    @keyframes float {
+        from {
+            transform: translateY(40px) translateZ(50px);
+            opacity: 0;
+            box-shadow: 0 0 0 rgba(255, 0, 255, 0), 0 0 0 rgba(0, 0, 0, 0);
+        }
+        to {
+            transform: translateY(0) translateZ(50px);
+            opacity: 1;
+            box-shadow: 0 0 40px rgba(255, 0, 255, 0.4), 0 0 80px rgba(0, 0, 0, 0.6);
+        }
+    }
+    
+    /* Celestial decorative elements */
+    /* Note: Positioning might need adjustment */
+    .celestial-star {
+        position: absolute; /* Requires a positioned parent */
+        background: white;
+        border-radius: 50%;
+        opacity: 0.8;
+        filter: blur(1px);
+        animation: twinkle 3s infinite alternate;
+        pointer-events: none;
+        z-index: 1; /* Ensure they are behind main UI elements */
+    }
+    
+    .celestial-planet {
+        position: absolute; /* Requires a positioned parent */
+        border-radius: 50%;
+        opacity: 0.15;
+        pointer-events: none;
+        filter: blur(2px);
+        z-index: 1; 
+    }
+    
+    @keyframes twinkle {
+        0% {
+            opacity: 0.3;
+            filter: blur(1px);
+        }
+        100% {
+            opacity: 0.8;
+            filter: blur(2px);
+        }
+    }
+    
+    /* Decorative elements around the timer */
+    .timer-decoration {
+        position: absolute;
+        top: 50%;
+        right: -5px;
+        transform: translateY(-50%);
+        height: 80%;
+        width: 2px;
+        background: linear-gradient(to bottom, rgba(100, 150, 255, 0), rgba(100, 150, 255, 0.8), rgba(100, 150, 255, 0));
+    }
+    
+    .timer-orbit {
+        position: absolute;
+        top: -10px;
+        right: -10px;
+        width: calc(100% + 20px);
+        height: calc(100% + 20px);
+        border: 1px dashed rgba(100, 150, 255, 0.3);
+        border-radius: 20px;
+        animation: rotate 20s linear infinite;
+        pointer-events: none;
+    }
+    
+    @keyframes rotate {
+        from {
+            transform: rotate(0deg);
+        }
+        to {
+            transform: rotate(360deg);
+        }
+    }
+    
+    /* Win Screen Styles */
+    .win-screen {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 15, 30, 0.7);
+        backdrop-filter: blur(10px);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 100;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.8s ease-in-out;
+    }
+    
+    .win-screen.active {
+        opacity: 1;
+        pointer-events: auto;
+    }
+    
+    .win-screen.fade-out {
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.5s ease-in-out;
+    }
+    
+    .win-message {
+        font-size: 80px;
+        font-weight: 900;
+        color: white;
+        text-shadow: 0 0 20px rgba(0, 255, 255, 1), 
+                     0 0 40px rgba(0, 200, 255, 0.8),
+                     0 0 60px rgba(0, 150, 255, 0.5);
+        margin-bottom: 40px;
+        text-align: center;
+        letter-spacing: 3px;
+        opacity: 0;
+        animation: win-message-appear 1s ease-out forwards, 
+                   win-text-pulse 3s 1s infinite alternate;
+        transform: perspective(500px) rotateX(10deg);
+    }
+    
+    @keyframes win-message-appear {
+        0% { transform: perspective(500px) rotateX(30deg) scale(1.5); opacity: 0; filter: blur(10px); }
+        100% { transform: perspective(500px) rotateX(10deg) scale(1); opacity: 1; filter: blur(0px); }
+    }
+    
+    @keyframes win-text-pulse {
+        0% { text-shadow: 0 0 20px rgba(0, 255, 255, 1), 0 0 40px rgba(0, 200, 255, 0.8); }
+        100% { text-shadow: 0 0 30px rgba(0, 255, 255, 1), 0 0 60px rgba(0, 200, 255, 0.8), 0 0 90px rgba(0, 150, 255, 0.5); }
+    }
+    
+    .win-stats {
+        background: rgba(0, 20, 30, 0.92);
+        border: 2px solid rgba(0, 255, 255, 0.7);
+        border-radius: 16px;
+        padding: 35px;
+        width: 500px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+        animation: win-float 1s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+        overflow: hidden;
+        z-index: 101;
+    }
+    
+    /* Add glowing border effect */
+    .win-stats::before {
+        content: '';
+        position: absolute;
+        top: -3px;
+        left: -3px;
+        right: -3px;
+        bottom: -3px;
+        border-radius: 18px;
+        background: linear-gradient(135deg, 
+            rgba(0, 255, 255, 0) 0%,
+            rgba(0, 255, 255, 0.4) 50%, 
+            rgba(0, 255, 255, 0) 100%);
+        z-index: -1;
+        opacity: 0.8;
+        animation: rotate-glow 8s linear infinite;
+    }
+    
+    /* Add circuit pattern background */
+    .win-stats::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        opacity: 0.15;
+        pointer-events: none;
+        background-image: 
+            repeating-linear-gradient(0deg, transparent, transparent 10px, 
+            rgba(0, 255, 255, 0.3) 10px, rgba(0, 255, 255, 0.3) 12px),
+            repeating-linear-gradient(90deg, transparent, transparent 10px, 
+            rgba(0, 200, 255, 0.3) 10px, rgba(0, 200, 255, 0.3) 12px);
+    }
+    
+    @keyframes win-float {
+        0% { transform: translateY(40px); opacity: 0; }
+        100% { transform: translateY(0); opacity: 1; }
+    }
+    
+    .win-stats-title {
+        font-size: 28px;
+        color: #ffffff;
+        margin-bottom: 25px;
+        text-align: center;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        text-shadow: 0 0 15px rgba(0, 255, 255, 0.8);
+    }
+    
+    .win-stat-row {
+        display: flex;
+        justify-content: space-between;
+        width: 100%;
+        margin-bottom: 15px;
+        border-bottom: 1px solid rgba(0, 255, 255, 0.3);
+        padding-bottom: 15px;
+    }
+    
+    .win-stat-label {
+        font-size: 20px;
+        color: rgba(255, 255, 255, 0.8);
+        text-shadow: 0 0 5px rgba(0, 255, 255, 0.5);
+    }
+    
+    .win-stat-value {
+        font-size: 24px;
+        font-weight: bold;
+        color: #00ffff;
+        text-shadow: 0 0 10px rgba(0, 255, 255, 0.8);
+    }
+    
+    .continue-button {
+        margin-top: 25px;
+        padding: 14px 30px;
+        border-radius: 8px;
+        font-size: 18px;
+        font-weight: bold;
+        cursor: pointer;
+        transition: all 0.2s;
+        border: 2px solid rgba(0, 255, 255, 0.7);
+        outline: none;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        background: linear-gradient(to bottom, rgba(0, 150, 255, 0.9), rgba(0, 100, 200, 0.9));
+        color: white;
+        box-shadow: 0 0 15px rgba(0, 200, 255, 0.5);
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .continue-button::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: linear-gradient(90deg, 
+                                   transparent 0%, 
+                                   rgba(255, 255, 255, 0.2) 50%, 
+                                   transparent 100%);
+        transform: translateX(-100%);
+        animation: button-shine 3s infinite;
+    }
+    
+    .continue-button:hover {
+        background: linear-gradient(to bottom, rgba(0, 180, 255, 0.9), rgba(0, 130, 230, 0.9));
+        transform: translateY(-2px) scale(1.05);
+        box-shadow: 0 0 25px rgba(0, 200, 255, 0.7);
+    }
+    
+    /* Confetti effect styles */
+    .confetti-container {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 99;
+        overflow: hidden;
+    }
+    
+    .confetti-particle {
+        position: absolute;
+        border-radius: 3px;
+        opacity: 0.8;
+        animation: confetti-fall 6s ease-in-out forwards;
+    }
+    
+    .confetti-ribbon {
+        position: absolute;
+        opacity: 0.9;
+        height: 14px !important;
+        width: 6px !important;
+        animation: ribbon-fall 8s ease-in-out forwards;
+    }
+    
+    .confetti-star {
+        position: absolute;
+        clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+        opacity: 0.9;
+        animation: star-fall 7s ease-in-out forwards;
+    }
+    
+    .confetti-special {
+        position: absolute;
+        border-radius: 50%;
+        opacity: 0.9;
+        animation: special-fall 9s ease-in-out forwards;
+    }
+    
+    .confetti-burst-container {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 1px;
+        height: 1px;
+        animation: burst-animation 1s ease-out forwards;
+    }
+    
+    @keyframes confetti-fall {
+        0% { 
+            transform: translateY(0) rotate(0deg); 
+            opacity: 0;
+        }
+        10% {
+            opacity: 0.8;
+        }
+        50% {
+            transform: translateY(500px) rotate(360deg) translateX(100px);
+        }
+        100% { 
+            transform: translateY(1000px) rotate(720deg) translateX(-100px); 
+            opacity: 0;
+        }
+    }
+    
+    @keyframes ribbon-fall {
+        0% { 
+            transform: translateY(0) rotate(0deg) scaleY(1); 
+            opacity: 0;
+        }
+        10% {
+            opacity: 0.9;
+        }
+        40% {
+            transform: translateY(400px) rotate(180deg) scaleY(3) translateX(150px);
+        }
+        70% {
+            transform: translateY(700px) rotate(360deg) scaleY(1) translateX(-150px);
+        }
+        100% { 
+            transform: translateY(1000px) rotate(540deg) scaleY(2) translateX(100px); 
+            opacity: 0;
+        }
+    }
+    
+    @keyframes star-fall {
+        0% { 
+            transform: translateY(0) rotate(0deg) scale(1); 
+            opacity: 0;
+        }
+        10% {
+            opacity: 0.9;
+            transform: translateY(100px) rotate(180deg) scale(1.5);
+        }
+        50% {
+            transform: translateY(500px) rotate(360deg) scale(1) translateX(-100px);
+        }
+        100% { 
+            transform: translateY(1000px) rotate(720deg) scale(0.5) translateX(200px); 
+            opacity: 0;
+        }
+    }
+    
+    @keyframes special-fall {
+        0% { 
+            transform: translateY(0) scale(0.5); 
+            opacity: 0;
+        }
+        10% {
+            opacity: 0.9;
+            transform: translateY(100px) scale(1.2);
+        }
+        30% {
+            transform: translateY(300px) scale(1.5) translateX(100px);
+        }
+        60% {
+            transform: translateY(600px) scale(1) translateX(-150px);
+        }
+        100% { 
+            transform: translateY(1000px) scale(0.7) translateX(50px); 
+            opacity: 0;
+        }
+    }
+    
+    @keyframes burst-animation {
+        0% {
+            box-shadow: 0 0 0 0px rgba(0, 255, 255, 0.8), 0 0 0 0px rgba(255, 0, 255, 0.8);
+            opacity: 1;
+        }
+        100% {
+            box-shadow: 0 0 0 200px rgba(0, 255, 255, 0), 0 0 0 400px rgba(255, 0, 255, 0);
+            opacity: 0;
+        }
+    }
+    
+    /* Bubble effect styles */
+    .bubble-container {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 50;
+        overflow: hidden;
+    }
+    
+    .bubble {
+        position: absolute;
+        border-radius: 50%;
+        background: radial-gradient(
+            circle at 30% 30%,
+            rgba(255, 255, 255, 0.9),
+            rgba(100, 200, 255, 0.8) 30%,
+            rgba(0, 180, 255, 0.6) 70%,
+            rgba(0, 150, 240, 0.4)
+        );
+        box-shadow: 
+            inset 2px 2px 2px rgba(255, 255, 255, 0.8),
+            inset -2px -2px 2px rgba(0, 80, 150, 0.2);
+        opacity: 0.9;
+        transform-origin: center;
+    }
+    
+    .bubble.pop {
+        background: transparent;
+        box-shadow: none;
+        animation: bubble-pop 0.3s ease-out forwards;
+    }
+    
+    @keyframes bubble-pop {
+        0% { opacity: 1; transform: scale(1); }
+        100% { opacity: 0; transform: scale(1.5); }
+    }
+    
+    /* Add a subtle shimmer inside bubbles */
+    .bubble::before {
+        content: '';
+        position: absolute;
+        top: 10%;
+        left: 10%;
+        width: 30%;
+        height: 30%;
+        background: rgba(255, 255, 255, 0.6);
+        border-radius: 50%;
+        filter: blur(2px);
+    }
+    
+    .bubble::after {
+        content: '';
+        position: absolute;
+        bottom: 10%;
+        right: 10%;
+        width: 20%;
+        height: 20%;
+        background: rgba(255, 255, 255, 0.4);
+        border-radius: 50%;
+        filter: blur(1px);
+    }
+    
+    /* Blood splatter effect styles */
+    .blood-splatter-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        pointer-events: none;
+        z-index: 9000;
+        overflow: hidden;
+    }
+    
+    .blood-flash {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background-color: rgba(180, 0, 0, 0.3);
+        animation: blood-flash 0.5s ease-out forwards;
+        pointer-events: none;
+        z-index: 9001;
+    }
+    
+    @keyframes blood-flash {
+        0% { opacity: 0.6; }
+        100% { opacity: 0; }
+    }
+    
+    .blood-drop {
+        position: absolute;
+        background-color: #8a0303;
+        border-radius: 50%;
+        box-shadow: inset 1px 1px 3px rgba(255, 0, 0, 0.3),
+                    inset -1px -1px 3px rgba(0, 0, 0, 0.4);
+        transform: translateZ(0);
+        filter: blur(1px);
+        z-index: 9002;
+    }
+    
+    .blood-drop.splat {
+        border-radius: 40% 60% 30% 70% / 60% 30% 70% 40%;
+        animation: blood-splat 2s ease-out forwards;
+    }
+    
+    @keyframes blood-splat {
+        0% { transform: scale(1); opacity: 1; }
+        10% { transform: scale(1.5); border-radius: 40% 60% 30% 70% / 60% 30% 70% 40%; }
+        100% { transform: scale(1.8); opacity: 0; border-radius: 40% 60% 30% 70% / 60% 30% 70% 40%; }
+    }
+    
+    /* Welcome Popup Styles */
+    .welcome-popup {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(10, 0, 30, 0.75);
+        backdrop-filter: blur(12px) brightness(0.9);
+        z-index: 200;
+        /* display: flex; /* REMOVED - Controlled by .active */
+        justify-content: center;
+        align-items: center;
+        opacity: 0;
+        pointer-events: none;
+        /* Adjust transition timing if needed */
+        transition: opacity 0.4s ease-out; 
+        display: none; /* Base style is hidden */
+    }
+    
+    .welcome-popup.active {
+        opacity: 1;
+        pointer-events: all;
+        display: flex; /* Make visible and flex when active */
+    }
+
+    /* REMOVED .welcome-popup.fade-out rule */
+    
+    .welcome-content {
+        background: rgba(20, 10, 50, 0.9);
+        border: 2px solid rgba(0, 255, 255, 0.6);
+        border-radius: 20px;
+        padding: 40px 50px;
+        width: 600px;
+        max-width: 90%;
+        box-shadow: 0 0 30px rgba(0, 255, 255, 0.3), 
+                   0 0 60px rgba(0, 0, 0, 0.5);
+        text-align: center;
+        position: relative;
+        overflow: hidden;
+        transform: perspective(1000px) rotateY(0deg) scale(0.9);
+        animation: welcome-appear 0.8s 0.2s cubic-bezier(0.2, 1, 0.3, 1) forwards;
+    }
+
+    @keyframes welcome-appear {
+        0% { transform: perspective(1000px) rotateY(15deg) scale(0.9); opacity: 0; }
+        100% { transform: perspective(1000px) rotateY(0deg) scale(1); opacity: 1; }
+    }
+    
+    /* Glowing border effect */
+    .welcome-content::before {
+        content: '';
+        position: absolute;
+        top: -4px;
+        left: -4px;
+        right: -4px;
+        bottom: -4px;
+        border-radius: 22px;
+        background: linear-gradient(145deg, 
+            rgba(0, 255, 255, 0) 0%,
+            rgba(0, 255, 255, 0.3) 50%, 
+            rgba(255, 0, 255, 0.3) 50%, 
+            rgba(255, 0, 255, 0) 100%);
+        z-index: -1;
+        opacity: 0.9;
+        animation: rotate-glow 12s linear infinite;
+    }
+    
+    .welcome-title {
+        font-size: 42px;
+        font-weight: 900;
+        color: #ffffff;
+        text-shadow: 0 0 15px rgba(0, 255, 255, 0.8), 
+                     0 0 30px rgba(0, 200, 255, 0.6);
+        margin-bottom: 20px;
+        text-transform: uppercase;
+        letter-spacing: 4px;
+    }
+    
+    .welcome-description {
+        font-size: 18px;
+        color: rgba(255, 255, 255, 0.85);
+        line-height: 1.6;
+        margin-bottom: 35px;
+        text-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+    }
+    
+    /* REMOVE styles related to .start-game-button if desired, or keep for other potential buttons */
+    /* .start-game-button { ... } */
+    /* .start-game-button::before { ... } */
+    /* .start-game-button:hover::before { ... } */
+    /* .start-game-button:hover { ... } */
+    /* .start-game-button:active { ... } */
+
+    /* Leaderboard Styles */
+    .leaderboard {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        width: 300px;
+        max-height: 400px;
+        background: rgba(10, 0, 30, 0.85);
+        border: 1px solid rgba(0, 255, 255, 0.4);
+        border-radius: 12px;
+        color: white;
+        z-index: 50;
+        padding: 15px;
+        box-shadow: 0 0 20px rgba(0, 255, 255, 0.2);
+        font-family: 'Inter', sans-serif;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        transition: transform 0.3s ease-out, opacity 0.3s ease-out;
+        opacity: 0.9;
+        transform: translateX(10px); /* Start slightly off-screen */
+    }
+
+    .leaderboard.visible {
+        transform: translateX(0);
+        opacity: 1;
+    }
+
+    .leaderboard-title {
+        font-size: 18px;
+        font-weight: bold;
+        text-align: center;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        color: #00ffff;
+        text-shadow: 0 0 8px rgba(0, 255, 255, 0.7);
+        margin-bottom: 10px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid rgba(0, 255, 255, 0.2);
+    }
+
+    .leaderboard-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        overflow-y: auto; /* Enable scrolling for long lists */
+        flex-grow: 1;
+    }
+
+    /* Custom scrollbar for leaderboard */
+    .leaderboard-list::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    .leaderboard-list::-webkit-scrollbar-track {
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 3px;
+    }
+
+    .leaderboard-list::-webkit-scrollbar-thumb {
+        background-color: rgba(0, 255, 255, 0.5);
+        border-radius: 3px;
+    }
+
+    .leaderboard-list li {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 6px 4px;
+        font-size: 14px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        transition: background-color 0.2s ease;
+    }
+
+    .leaderboard-list li:last-child {
+        border-bottom: none;
+    }
+
+    .leaderboard-list li:hover {
+        background-color: rgba(0, 255, 255, 0.1);
+    }
+
+    .leaderboard-rank {
+        font-weight: bold;
+        color: #ffdd00;
+        width: 30px;
+        text-align: center;
+    }
+
+    .leaderboard-name {
+        flex-grow: 1;
+        margin-left: 10px;
+        color: #e0e0e0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
+
+    .leaderboard-time {
+        font-weight: bold;
+        color: #00ffaa;
+        font-variant-numeric: tabular-nums;
+    }
+
+    /* REMOVE styles related to .start-game-button if desired, or keep for other potential buttons */
+    /* ... */
+</style>
+
+<!-- Timer HUD - Hyper-advanced holographic design -->
+<div id="timer-hud" class="timer-hud">
+    <div class="timer-inner-frame">
+        <!-- HUD patterns and effects -->
+        <div class="hex-pattern"></div>
+        <div class="circuit-traces">
+            <div class="circuit-trace trace-1"></div>
+            <div class="circuit-trace trace-2"></div>
+            <div class="circuit-trace trace-3"></div>
+            <div class="circuit-trace trace-4"></div>
+        </div>
+        
+        <!-- Corner design elements -->
+        <div class="corner-accent corner-tl"></div>
+        <div class="corner-accent corner-tr"></div>
+        <div class="corner-accent corner-bl"></div>
+        <div class="corner-accent corner-br"></div>
+        
+        <!-- Corner indicators -->
+        <div class="corner-indicator indicator-tl"></div>
+        <div class="corner-indicator indicator-tr"></div>
+        <div class="corner-indicator indicator-bl"></div>
+        <div class="corner-indicator indicator-br"></div>
+        
+        <!-- Timer content -->
+        <div class="timer-title">OXYGEN REMAINING</div>
+        <div id="timer-display" class="timer-display">10.0</div>
+        
+        <!-- Advanced oxygen bar -->
+        <div class="timer-progress">
+            <div id="timer-progress-inner" class="timer-progress-inner"></div>
+        </div>
+        
+        <!-- Oxygen particles effect -->
+        <div class="oxygen-particles">
+            <div class="oxygen-particle" style="left: 10%; animation-delay: 0s;"></div>
+            <div class="oxygen-particle" style="left: 20%; animation-delay: 0.5s;"></div>
+            <div class="oxygen-particle" style="left: 35%; animation-delay: 1s;"></div>
+            <div class="oxygen-particle" style="left: 50%; animation-delay: 1.5s;"></div>
+            <div class="oxygen-particle" style="left: 65%; animation-delay: 2s;"></div>
+            <div class="oxygen-particle" style="left: 80%; animation-delay: 2.5s;"></div>
+            <div class="oxygen-particle" style="left: 90%; animation-delay: 1.8s;"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Death Overlay - Enhanced with dramatic effects -->
+<div id="death-overlay" class="death-overlay">
+    <div class="death-message">
+        <span>DO BETTER</span>
+        <span>YOU HAVE DIED</span>
+    </div>
+    <div class="restart-popup">
+        <div class="restart-popup-title">Your oxygen has depleted</div>
+        <div class="restart-buttons">
+            <button id="restart-button" class="restart-button">Start Over</button>
+            <button id="quit-button" class="quit-button">Quit</button>
+        </div>
+    </div>
+</div>
+
+<!-- Win Screen - Celebration UI -->
+<div id="win-screen" class="win-screen">
+    <div id="confetti-container" class="confetti-container"></div>
+    <div class="win-message">MAZE COMPLETED!</div>
+    <div class="win-stats">
+        <div class="win-stats-title">MISSION SUCCESSFUL</div>
+        <div class="win-stat-row">
+            <div class="win-stat-label">Your Time:</div>
+            <div id="win-time-display" class="win-stat-value">00:00.00</div>
+        </div>
+        <div class="win-stat-row">
+            <div class="win-stat-label">Best Time:</div>
+            <div id="best-time-display" class="win-stat-value">00:00.00</div>
+        </div>
+        <button id="continue-button" class="continue-button" onclick="handleContinue()">Play Again</button>
+    </div>
+</div>
+
+<!-- Welcome Popup (Button Removed) -->
+<div id="welcome-popup" class="welcome-popup"> <!-- Default should not be active anymore -->
+    <div class="welcome-content">
+        <div class="welcome-title">Maze Dash</div>
+        <div class="welcome-description">
+            Welcome, Runner! Navigate the maze to the exit. Watch your oxygen!
+            <br/><br/>
+            <strong style="font-size: 1.2em; color: #00ffff;">Press SPACEBAR to start!</strong>
+        </div>
+        <!-- <button id="start-game-button" class="start-game-button">Let's Run</button> --> <!-- REMOVED BUTTON -->
+    </div>
+</div> 
+
+<!-- Leaderboard Display -->
+<div id="leaderboard" class="leaderboard"> <!-- Start hidden -->
+    <div class="leaderboard-title">Top 10 Runners</div>
+    <ul id="leaderboard-list" class="leaderboard-list">
+        <!-- Leaderboard entries will be populated here -->
+        <li>Loading...</li>
+    </ul>
+</div>

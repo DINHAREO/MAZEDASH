@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maze Dash - Maze Visualization</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #222;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        h1 {
+            margin-bottom: 20px;
+        }
+        canvas {
+            border: 2px solid #666;
+            background-color: #333;
+            margin-bottom: 20px;
+        }
+        .maze-info {
+            background-color: #333;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            max-width: 800px;
+        }
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .color-box {
+            width: 20px;
+            height: 20px;
+            border: 1px solid #666;
+        }
+    </style>
+</head>
+<body>
+    <h1>Maze Dash - Maze Visualization</h1>
+    
+    <div class="maze-info">
+        <p>This is a top-down visualization of the maze in Maze Dash. The maze is generated using a depth-first search algorithm with a fixed seed, ensuring it's always solvable.</p>
+    </div>
+    
+    <div class="legend">
+        <div class="legend-item">
+            <div class="color-box" style="background-color: #8BC34A;"></div>
+            <span>Path</span>
+        </div>
+        <div class="legend-item">
+            <div class="color-box" style="background-color: #444;"></div>
+            <span>Wall</span>
+        </div>
+        <div class="legend-item">
+            <div class="color-box" style="background-color: #2196F3;"></div>
+            <span>Entrance</span>
+        </div>
+        <div class="legend-item">
+            <div class="color-box" style="background-color: #F44336;"></div>
+            <span>Exit</span>
+        </div>
+        <div class="legend-item">
+            <div class="color-box" style="background-color: #FFC107;"></div>
+            <span>Potions</span>
+        </div>
+    </div>
+    
+    <canvas id="mazeCanvas" width="800" height="800"></canvas>
+    
+    <script>
+        // Constants from the game
+        const MAZE_SIZE = 50;
+        const PATH_WIDTH = 4;
+        const FIXED_SEED = 12345;
+        
+        // Canvas settings
+        const CELL_SIZE = 8; // Pixels per cell for visualization
+        const WALL_COLOR = '#444';
+        const PATH_COLOR = '#8BC34A';
+        const ENTRANCE_COLOR = '#2196F3';
+        const EXIT_COLOR = '#F44336';
+        const POTION_COLOR = '#FFC107';
+        
+        // Seeded random function (same as game)
+        let currentSeed = FIXED_SEED;
+        function seedRandom() {
+            const x = Math.sin(currentSeed++) * 10000;
+            return x - Math.floor(x);
+        }
+        
+        // Cell object for maze generation
+        class Cell {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.visited = false;
+                this.walls = {
+                    top: true,
+                    right: true,
+                    bottom: true,
+                    left: true
+                };
+            }
+        }
+        
+        // Direction vectors
+        const DIRECTIONS = [
+            { x: 0, y: -1, wall: 'top', opposite: 'bottom' }, // Top
+            { x: 1, y: 0, wall: 'right', opposite: 'left' }, // Right
+            { x: 0, y: 1, wall: 'bottom', opposite: 'top' }, // Bottom
+            { x: -1, y: 0, wall: 'left', opposite: 'right' } // Left
+        ];
+        
+        // Initialize the grid
+        function initializeGrid() {
+            const grid = [];
+            for (let y = 0; y < MAZE_SIZE; y++) {
+                const row = [];
+                for (let x = 0; x < MAZE_SIZE; x++) {
+                    row.push(new Cell(x, y));
+                }
+                grid.push(row);
+            }
+            return grid;
+        }
+        
+        // Check if cell coordinates are valid
+        function isValidCell(x, y) {
+            return x >= 0 && x < MAZE_SIZE && y >= 0 && y < MAZE_SIZE;
+        }
+        
+        // Generate the maze using same algorithm as game
+        function generateMaze() {
+            // Reset seed
+            currentSeed = FIXED_SEED;
+            
+            // Initialize grid
+            const grid = initializeGrid();
+            
+            // Set entrance in the middle of the top row
+            const startX = Math.floor(MAZE_SIZE / 2);
+            const startY = 0;
+            const entrance = { x: startX, y: startY };
+            
+            // Ensure entrance has no top wall
+            if (isValidCell(startX, startY)) {
+                grid[startY][startX].walls.top = false;
+            }
+            
+            // Set exit in the middle of bottom row
+            const exitX = Math.floor(MAZE_SIZE / 2);
+            const exitY = MAZE_SIZE - 1;
+            const exit = { x: exitX, y: exitY };
+            
+            // Ensure exit has no bottom wall
+            if (isValidCell(exitX, exitY)) {
+                grid[exitY][exitX].walls.bottom = false;
+            }
+            
+            // Generate maze using DFS
+            depthFirstSearch(grid, startX, startY);
+            
+            // Connect to exit if needed
+            if (!hasPathToExit(grid, exit)) {
+                connectToExit(grid, exit);
+            }
+            
+            // Add extra connections
+            addExtraConnections(grid);
+            
+            return { grid, entrance, exit };
+        }
+        
+        // DFS maze generation
+        function depthFirstSearch(grid, startX, startY) {
+            const stack = [];
+            let x = startX;
+            let y = startY;
+            
+            if (!isValidCell(x, y)) return;
+            
+            // Mark start cell as visited
+            grid[y][x].visited = true;
+            stack.push([x, y]);
+            
+            while (stack.length > 0) {
+                [x, y] = stack[stack.length - 1];
+                
+                // Find unvisited neighbors
+                const neighbors = [];
+                for (let dirIndex = 0; dirIndex < DIRECTIONS.length; dirIndex++) {
+                    const dir = DIRECTIONS[dirIndex];
+                    const newX = x + dir.x;
+                    const newY = y + dir.y;
+                    
+                    if (isValidCell(newX, newY) && !grid[newY][newX].visited) {
+                        neighbors.push({ x: newX, y: newY, dirIndex });
+                    }
+                }
+                
+                if (neighbors.length > 0) {
+                    // Choose random neighbor
+                    const neighborIndex = Math.floor(seedRandom() * neighbors.length);
+                    const neighbor = neighbors[neighborIndex];
+                    const dir = DIRECTIONS[neighbor.dirIndex];
+                    
+                    // Remove walls between cells
+                    grid[y][x].walls[dir.wall] = false;
+                    grid[neighbor.y][neighbor.x].walls[dir.opposite] = false;
+                    
+                    // Mark neighbor as visited
+                    grid[neighbor.y][neighbor.x].visited = true;
+                    
+                    // Push neighbor to stack
+                    stack.push([neighbor.x, neighbor.y]);
+                } else {
+                    // Backtrack
+                    stack.pop();
+                }
+            }
+        }
+        
+        // Check if there's a path to exit
+        function hasPathToExit(grid, exit) {
+            return isValidCell(exit.x, exit.y) && grid[exit.y][exit.x].visited;
+        }
+        
+        // Connect to exit if needed
+        function connectToExit(grid, exit) {
+            // Find closest visited cell to exit
+            let closestCell = null;
+            let closestDistance = Infinity;
+            
+            for (let y = 0; y < MAZE_SIZE; y++) {
+                for (let x = 0; x < MAZE_SIZE; x++) {
+                    if (grid[y][x].visited) {
+                        const distance = Math.abs(x - exit.x) + Math.abs(y - exit.y);
+                        if (distance < closestDistance) {
+                            closestCell = { x, y };
+                            closestDistance = distance;
+                        }
+                    }
+                }
+            }
+            
+            // Create path from closest cell to exit
+            if (closestCell) {
+                createPathToExit(grid, closestCell.x, closestCell.y, exit);
+            }
+        }
+        
+        // Create a path to the exit
+        function createPathToExit(grid, startX, startY, exit) {
+            let currentX = startX;
+            let currentY = startY;
+            
+            while (currentX !== exit.x || currentY !== exit.y) {
+                // Mark current cell as visited
+                if (isValidCell(currentX, currentY)) {
+                    grid[currentY][currentX].visited = true;
+                } else {
+                    break;
+                }
+                
+                // Choose direction to get closer to exit
+                const xDiff = exit.x - currentX;
+                const yDiff = exit.y - currentY;
+                
+                if (Math.abs(yDiff) > 0) {
+                    // Move vertically
+                    if (yDiff > 0) {
+                        // Move down
+                        if (isValidCell(currentX, currentY + 1)) {
+                            grid[currentY][currentX].walls.bottom = false;
+                            grid[currentY + 1][currentX].walls.top = false;
+                            currentY++;
+                        } else {
+                            break;
+                        }
+                    } else {
+                        // Move up
+                        if (isValidCell(currentX, currentY - 1)) {
+                            grid[currentY][currentX].walls.top = false;
+                            grid[currentY - 1][currentX].walls.bottom = false;
+                            currentY--;
+                        } else {
+                            break;
+                        }
+                    }
+                } else if (Math.abs(xDiff) > 0) {
+                    // Move horizontally
+                    if (xDiff > 0) {
+                        // Move right
+                        if (isValidCell(currentX + 1, currentY)) {
+                            grid[currentY][currentX].walls.right = false;
+                            grid[currentY][currentX + 1].walls.left = false;
+                            currentX++;
+                        } else {
+                            break;
+                        }
+                    } else {
+                        // Move left
+                        if (isValidCell(currentX - 1, currentY)) {
+                            grid[currentY][currentX].walls.left = false;
+                            grid[currentY][currentX - 1].walls.right = false;
+                            currentX--;
+                        } else {
+                            break;
+                        }
+                    }
+                } else {
+                    // Reached exit
+                    break;
+                }
+            }
+            
+            // Mark exit as visited
+            if (isValidCell(exit.x, exit.y)) {
+                grid[exit.y][exit.x].visited = true;
+            }
+        }
+        
+        // Add extra connections to make maze more interesting
+        function addExtraConnections(grid) {
+            const totalCells = MAZE_SIZE * MAZE_SIZE;
+            const connectionsToAdd = Math.floor(totalCells * 0.1);
+            
+            for (let i = 0; i < connectionsToAdd; i++) {
+                const x = Math.floor(seedRandom() * MAZE_SIZE);
+                const y = Math.floor(seedRandom() * MAZE_SIZE);
+                
+                if (!isValidCell(x, y)) continue;
+                
+                // Pick random direction
+                const dirIndex = Math.floor(seedRandom() * DIRECTIONS.length);
+                const dir = DIRECTIONS[dirIndex];
+                const nextX = x + dir.x;
+                const nextY = y + dir.y;
+                
+                if (isValidCell(nextX, nextY)) {
+                    // Remove walls between cells
+                    grid[y][x].walls[dir.wall] = false;
+                    grid[nextY][nextX].walls[dir.opposite] = false;
+                }
+            }
+        }
+        
+        // Generate random potion locations
+        function generatePotions(grid, entrance, exit, count = 50) {
+            const potions = [];
+            const walkableCells = [];
+            
+            // Find all walkable cells
+            for (let y = 0; y < MAZE_SIZE; y++) {
+                for (let x = 0; x < MAZE_SIZE; x++) {
+                    if (grid[y][x].visited) {
+                        walkableCells.push({ x, y });
+                    }
+                }
+            }
+            
+            // Filter out cells near entrance and exit
+            const excludeRadius = 3;
+            const eligibleCells = walkableCells.filter(cell => {
+                const distFromEntrance = Math.abs(cell.x - entrance.x) + Math.abs(cell.y - entrance.y);
+                const distFromExit = Math.abs(cell.x - exit.x) + Math.abs(cell.y - exit.y);
+                return distFromEntrance > excludeRadius && distFromExit > excludeRadius;
+            });
+            
+            // Add entrance and first cell potions
+            potions.push({
+                x: entrance.x,
+                y: 0,
+                z: 2 // First cell
+            });
+            
+            potions.push({
+                x: entrance.x,
+                y: 0,
+                z: 6 // Second cell
+            });
+            
+            // Add random potions
+            for (let i = 0; i < count && eligibleCells.length > 0; i++) {
+                const randomIndex = Math.floor(seedRandom() * eligibleCells.length);
+                const cell = eligibleCells[randomIndex];
+                
+                potions.push({
+                    x: cell.x,
+                    y: 0,
+                    z: cell.y
+                });
+                
+                // Remove to avoid duplicates
+                eligibleCells.splice(randomIndex, 1);
+            }
+            
+            return potions;
+        }
+        
+        // Draw the maze on canvas
+        function drawMaze(maze, potions) {
+            const canvas = document.getElementById('mazeCanvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Scale to fit entire maze in canvas
+            const scale = Math.min(
+                canvas.width / (MAZE_SIZE * CELL_SIZE),
+                canvas.height / (MAZE_SIZE * CELL_SIZE)
+            );
+            
+            ctx.save();
+            ctx.scale(scale, scale);
+            
+            // Draw each cell
+            for (let y = 0; y < MAZE_SIZE; y++) {
+                for (let x = 0; x < MAZE_SIZE; x++) {
+                    const cell = maze.grid[y][x];
+                    const cellX = x * CELL_SIZE;
+                    const cellY = y * CELL_SIZE;
+                    
+                    // Draw cell background (path if visited)
+                    if (cell.visited) {
+                        ctx.fillStyle = PATH_COLOR;
+                        ctx.fillRect(cellX, cellY, CELL_SIZE, CELL_SIZE);
+                    }
+                    
+                    // Draw entrance/exit
+                    if (x === maze.entrance.x && y === maze.entrance.y) {
+                        ctx.fillStyle = ENTRANCE_COLOR;
+                        ctx.fillRect(cellX, cellY, CELL_SIZE, CELL_SIZE);
+                    } else if (x === maze.exit.x && y === maze.exit.y) {
+                        ctx.fillStyle = EXIT_COLOR;
+                        ctx.fillRect(cellX, cellY, CELL_SIZE, CELL_SIZE);
+                    }
+                    
+                    // Draw walls
+                    ctx.strokeStyle = WALL_COLOR;
+                    ctx.lineWidth = 1;
+                    
+                    // Top wall
+                    if (cell.walls.top) {
+                        ctx.beginPath();
+                        ctx.moveTo(cellX, cellY);
+                        ctx.lineTo(cellX + CELL_SIZE, cellY);
+                        ctx.stroke();
+                    }
+                    
+                    // Right wall
+                    if (cell.walls.right) {
+                        ctx.beginPath();
+                        ctx.moveTo(cellX + CELL_SIZE, cellY);
+                        ctx.lineTo(cellX + CELL_SIZE, cellY + CELL_SIZE);
+                        ctx.stroke();
+                    }
+                    
+                    // Bottom wall
+                    if (cell.walls.bottom) {
+                        ctx.beginPath();
+                        ctx.moveTo(cellX + CELL_SIZE, cellY + CELL_SIZE);
+                        ctx.lineTo(cellX, cellY + CELL_SIZE);
+                        ctx.stroke();
+                    }
+                    
+                    // Left wall
+                    if (cell.walls.left) {
+                        ctx.beginPath();
+                        ctx.moveTo(cellX, cellY + CELL_SIZE);
+                        ctx.lineTo(cellX, cellY);
+                        ctx.stroke();
+                    }
+                }
+            }
+            
+            // Draw potions
+            for (const potion of potions) {
+                const cellX = potion.x * CELL_SIZE + CELL_SIZE / 2;
+                const cellY = potion.z * CELL_SIZE + CELL_SIZE / 2;
+                
+                ctx.fillStyle = POTION_COLOR;
+                ctx.beginPath();
+                ctx.arc(cellX, cellY, CELL_SIZE / 4, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // Draw entrance platform
+            ctx.fillStyle = ENTRANCE_COLOR;
+            ctx.globalAlpha = 0.5;
+            ctx.fillRect(
+                (maze.entrance.x - 2) * CELL_SIZE, 
+                -CELL_SIZE * 2, 
+                CELL_SIZE * 5, 
+                CELL_SIZE * 2
+            );
+            
+            // Draw exit platform
+            ctx.fillStyle = EXIT_COLOR;
+            ctx.fillRect(
+                (maze.exit.x - 2) * CELL_SIZE, 
+                MAZE_SIZE * CELL_SIZE, 
+                CELL_SIZE * 5, 
+                CELL_SIZE * 2
+            );
+            
+            ctx.globalAlpha = 1.0;
+            ctx.restore();
+        }
+        
+        // Generate and draw the maze
+        function renderMazeVisualization() {
+            const maze = generateMaze();
+            const potions = generatePotions(maze.grid, maze.entrance, maze.exit);
+            drawMaze(maze, potions);
+        }
+        
+        // Run the visualization
+        window.onload = renderMazeVisualization;
+    </script>
+</body>
+</html> 
