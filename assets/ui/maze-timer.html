@@ -667,6 +667,26 @@
             }
         }
         // --- END NEW HANDLERS ---
+        
+        // --- NEW: Handle Start Bonus Message ---
+        else if (data.type === 'apply-start-bonus') {
+          console.log(`Received starting bonus: +${data.timeBonus} seconds`);
+          // REMOVED: timerState.isRunning check to avoid race condition.
+          // We trust the server sends this only when the player is starting.
+          if (data.timeBonus > 0) {
+            const bonusMilliseconds = data.timeBonus * 1000;
+            // Add bonus to both remaining and initial time for correct display/percentage
+            timerState.timeRemaining += bonusMilliseconds;
+            timerState.initialTime += bonusMilliseconds; 
+            
+            // Update the display immediately to show the bonus
+            // This might briefly show the bonus added to the base 10s before startTimer fully resets,
+            // but startTimer will quickly correct timeRemaining based on the new initialTime.
+            updateTimerDisplay();
+            console.log(`Applied ${data.timeBonus}s bonus. New initialTime: ${timerState.initialTime/1000}s`); // DEBUG Log
+          }
+        }
+        // --- END Handle Start Bonus Message ---
     });
 
     // --- Leaderboard Handling ---

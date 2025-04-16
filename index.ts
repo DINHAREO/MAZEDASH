@@ -77,11 +77,11 @@ const server = startServer((world) => {
   // Configure lighting for a sunset atmosphere
   // Set ambient light to a warm orange-gold tone
   world.setAmbientLightColor({ r: 255, g: 180, b: 120 });
-  world.setAmbientLightIntensity(0.7);
+  world.setAmbientLightIntensity(0.85);
   
   // Set directional light to a golden sunset color
   world.setDirectionalLightColor({ r: 255, g: 190, b: 140 });
-  world.setDirectionalLightIntensity(0.45);
+  world.setDirectionalLightIntensity(0.6);
   
   // The skybox will automatically be loaded from assets/cubemaps/skybox
 
@@ -117,6 +117,9 @@ const server = startServer((world) => {
   const playerTimers = new Map<string, PlayerTimerState>();
   // Store all connected players
   const connectedPlayers = new Set<Player>();
+  // Store player start order count and assigned bonuses for multiplayer fairness
+  let playersStartedCount = 0;
+  const playerStartingBonuses = new Map<string, number>(); // Map<playerId, bonusSeconds>
 
   // // Create start sensor at the entrance (REMOVED - Game now starts via UI button)
   // createStartSensor(world, entrance, playerTimers);
@@ -426,6 +429,7 @@ const server = startServer((world) => {
     // Clean up entities
     
     // Respawn potions - first clean up existing ones
+    /* // REMOVED FOR MULTIPLAYER - Respawn should not reset shared entities
     for (const potion of potions) {
       if (potion.entity && potion.entity.isSpawned) {
         potion.entity.despawn();
@@ -434,8 +438,10 @@ const server = startServer((world) => {
     
     // Clear the potions array
     potions.length = 0;
+    */
     
     // Clean up all existing zombies first
+    /* // REMOVED FOR MULTIPLAYER
     const zombieEntities = world.entityManager.getEntitiesByTag("zombie");
     if (zombieEntities.length > 0) {
       // console.log(`Cleaning up ${zombieEntities.length} existing zombies before respawning`);
@@ -445,14 +451,19 @@ const server = startServer((world) => {
         }
       });
     }
+    */
     
     // Respawn all potions with increased count
+    /* // REMOVED FOR MULTIPLAYER
     placeWaterPotion(world, entrance);
     placeEntrancePotion(world, entrance);
     placeRandomPotions(world, mazeGenerator, 150);
+    */
     
     // Respawn zombies throughout the maze
+    /* // REMOVED FOR MULTIPLAYER - Zombies are spawned once at server start
     spawnZombies(world, mazeGenerator, playerTimers);
+    */
     
     // Notify player of respawn
     world.chatManager.sendPlayerMessage(
@@ -486,6 +497,11 @@ const server = startServer((world) => {
     
     // Clean up any orphaned player entities before adding a new player
     // This ensures we don't have leftover entities from previous sessions
+    // NOTE: In multiplayer, we need to be careful here. We only want to clean up
+    // entities potentially associated with THIS joining player if they somehow left
+    // an orphaned entity behind, not *all* player entities. For simplicity now,
+    // let's comment out this broad cleanup as it's risky in multiplayer.
+    /*
     if (playerEntities.length > 0) {
       // console.log(`Cleaning up ${playerEntities.length} orphaned player entities before adding new player`);
       playerEntities.forEach((entity: PlayerEntity) => {
@@ -495,16 +511,21 @@ const server = startServer((world) => {
         }
       });
     }
+    */
     
     // Enforce single-player mode by disconnecting any new players if someone is already playing
+    // REMOVED FOR MULTIPLAYER
+    /*
     if (existingPlayerCount > 0) {
       // console.log(`Game already has ${existingPlayerCount} players. Rejecting new player ${player.username}`);
       player.disconnect();
       return;
     }
+    */
     
     // Add the player to connected players set
     connectedPlayers.add(player);
+    // console.log(`Added player ${player.username} to connectedPlayers. Total: ${connectedPlayers.size}`); // Added log
     
     // Initialize timer state for this player
     playerTimers.set(player.id, {
@@ -689,6 +710,35 @@ const server = startServer((world) => {
         
         // Start the oxygen countdown via UI message
         startOxygenCountdown(player, timerState);
+
+        // --- NEW: Apply Multiplayer Starting Bonus on First Start ---
+        if (!playerStartingBonuses.has(player.id)) {
+          playersStartedCount++;
+          const startingBonusSeconds = (playersStartedCount - 1) * 30;
+          playerStartingBonuses.set(player.id, startingBonusSeconds);
+          
+          // Only send bonus message if bonus is greater than 0
+          if (startingBonusSeconds > 0) {
+            player.ui.sendData({
+              type: 'apply-start-bonus',
+              timeBonus: startingBonusSeconds
+            });
+            // console.log(`Player ${player.username} is player #${playersStartedCount}, granting start bonus: ${startingBonusSeconds}s`); // DEBUG
+            world.chatManager.sendPlayerMessage(
+              player,
+              `Welcome! As player #${playersStartedCount}, you get a +${startingBonusSeconds} second starting bonus!`,
+              'FFFF00' // Yellow color
+            );
+          } else {
+            // console.log(`Player ${player.username} is player #${playersStartedCount}, no bonus.`); // DEBUG
+            world.chatManager.sendPlayerMessage(
+              player,
+              `You are the first player! Find the exit! Good luck!`,
+              '00FF00' // Green color
+            );
+          }
+        }
+        // --- END Multiplayer Starting Bonus ---
         
         // Start the background music now
         playBackgroundMusic();
@@ -1344,7 +1394,7 @@ function spawnZombies(world: World, mazeGenerator: MazeGenerator, playerTimers: 
         zombies.splice(i, 1);
       }
     }
-  }, 100); // Update every 100ms
+  }, 250); // Update every 250ms (was 100ms)
     
   // Add cleanup for when there are no players
   world.on(PlayerEvent.LEFT_WORLD, () => {
