@@ -120,6 +120,8 @@ const server = startServer((world) => {
   // Store player start order count and assigned bonuses for multiplayer fairness
   let playersStartedCount = 0;
   const playerStartingBonuses = new Map<string, number>(); // Map<playerId, bonusSeconds>
+  const playerDeathCounts = new Map<string, number>(); // Map<playerId, deathCount>
+  const playerTotalWinBonus = new Map<string, number>(); // Map<playerId, cumulativeWinBonusSeconds>
 
   // // Create start sensor at the entrance (REMOVED - Game now starts via UI button)
   // createStartSensor(world, entrance, playerTimers);
@@ -225,14 +227,26 @@ const server = startServer((world) => {
   function startOxygenCountdown(player: Player, timerState: PlayerTimerState): void {
     // console.log(`Starting oxygen countdown for player: ${player.username}`);
     
+    // --- Calculate total start time including potential bonus ---
+    const assignedBonusSeconds = playerStartingBonuses.get(player.id) || 0;
+    // const totalStartTimeSeconds = 10 + assignedBonusSeconds; // Base 10 seconds + bonus -> Now includes death/win bonus
+    const deathCount = playerDeathCounts.get(player.id) || 0;
+    const deathBonusSeconds = deathCount * 30;
+    const winBonusSeconds = playerTotalWinBonus.get(player.id) || 0;
+    const totalStartTimeSeconds = 10 + assignedBonusSeconds + deathBonusSeconds + winBonusSeconds;
+    // console.log(`Player ${player.username} starting countdown. Join Bonus: ${assignedBonusSeconds}s, Deaths: ${deathCount} (Bonus: ${deathBonusSeconds}s), Win Bonus: ${winBonusSeconds}s, Total Start Time: ${totalStartTimeSeconds}s`); // DEBUG
+    // --- End Calculation ---
+    
     // Set countdown active flag
     timerState.countdownActive = true;
-    timerState.oxygenTimer = 10; // Initialize with 10 seconds
+    // timerState.oxygenTimer = 10; // Initialize with 10 seconds -> Use calculated time
+    timerState.oxygenTimer = totalStartTimeSeconds; // Use calculated total time
     
     // Signal UI to start countdown - let the client handle the actual timer
     player.ui.sendData({
       type: 'start-countdown',
-      initialTime: timerState.oxygenTimer // Send initial time to UI
+      // initialTime: timerState.oxygenTimer // Send initial time to UI -> Use calculated time
+      initialTime: totalStartTimeSeconds // Send the calculated total time
     });
     
     // We no longer use server-side timeouts for oxygen depletion
@@ -326,6 +340,12 @@ const server = startServer((world) => {
       // console.log("Leaderboard updated:", leaderboardTimes);
       broadcastLeaderboardUpdate();
       // --- End Leaderboard Update Logic ---
+
+      // --- Reset death count on successful completion ---
+      playerDeathCounts.set(player.id, 0);
+      // console.log(`Player ${player.username} won. Reset death count to 0.`); // DEBUG
+      // --- End death count reset ---
+
     } else {
       // console.log(`Timer was not running for player: ${player.username} or timer state not found`);
     }
@@ -347,6 +367,12 @@ const server = startServer((world) => {
     // Update timer state
     timerState.countdownActive = false;
     timerState.isRunning = false;
+
+    // --- Increment death count for this player ---
+    const currentDeaths = playerDeathCounts.get(player.id) || 0;
+    playerDeathCounts.set(player.id, currentDeaths + 1);
+    // console.log(`Player ${player.username} died. New death count: ${currentDeaths + 1}`); // DEBUG
+    // --- End death count increment ---
     
     // Show death overlay
     player.ui.sendData({
@@ -563,50 +589,34 @@ const server = startServer((world) => {
       // More detailed logging for UI messages
       // console.log(`[UI Data Received] Player: ${player.username}, Message Type: ${data?.type}, Full Data:`, JSON.stringify(data));
       
+      // --- Handle Restart from Death Screen ---
       if (data.type === 'player-restart') {
-        // console.log(`[UI Handler] Player ${player.username} requested restart via UI message.`);
+        // console.log(`[UI Handler] Player ${player.username} requested restart via UI message (death).`);
         
-        // Reset the player timer
-        const timerState = playerTimers.get(player.id);
-        if (timerState) {
-          timerState.isRunning = false;
-          timerState.startTime = null;
-          timerState.endTime = null;
-          timerState.countdownActive = false;
-          // console.log(`Reset timer state for player ${player.username}`);
-        }
+        // Simply respawn - no bonus applied here
+        respawnPlayer(player); 
+      } 
+      // --- Handle Restart from Win Screen (Applies Bonus) ---
+      else if (data.type === 'player-restart-from-win') {
+        // console.log(`[UI Handler] Player ${player.username} requested restart via UI message (win).`);
         
-        // Get the player entity and respawn
-        const playerEntity = world.entityManager.getPlayerEntitiesByPlayer(player)[0];
-        if (playerEntity) {
-          // console.log(`Found player entity for ${player.username}, calling respawnPlayer`);
-          respawnPlayer(player);
-        } else {
-          // console.warn(`No player entity found for ${player.username} during restart, attempting to create a new one`);
-          // Attempt to create a new player entity at the entrance
-          const newPlayerEntity = new PlayerEntity({
-            player,
-            name: player.username,
-            modelUri: 'models/players/player.gltf',
-            modelLoopedAnimations: ['idle'],
-            modelScale: 0.5
-          });
-          
-          // Spawn at entrance
-          newPlayerEntity.spawn(world, {
-            x: entrance.x,
-            y: entrance.y + 1.5,
-            z: entrance.z
-          });
-          
-          // console.log(`Created and spawned new player entity for ${player.username} at entrance`);
-          
-          // Send reset signal to UI
-          player.ui.sendData({
-            type: 'reset-timer'
-          });
-        }
-      } else if (data.type === 'player-quit') {
+        // Add 300 seconds (5 minutes) to the player's cumulative win bonus
+        const currentWinBonus = playerTotalWinBonus.get(player.id) || 0;
+        const newTotalWinBonus = currentWinBonus + 300;
+        playerTotalWinBonus.set(player.id, newTotalWinBonus);
+
+        // Notify player of the bonus
+        world.chatManager.sendPlayerMessage(
+          player,
+          `Victory Bonus! +5 minutes added to your next start time. Total win bonus: ${newTotalWinBonus / 60} minutes!`,
+          '00FF00' // Green color
+        );
+
+        // Respawn the player
+        respawnPlayer(player);
+      } 
+      // --- Handle Quit ---
+      else if (data.type === 'player-quit') {
         // console.log(`Player ${player.username} requested quit`);
         player.disconnect();
       } else if (data.type === 'oxygen-depleted') {

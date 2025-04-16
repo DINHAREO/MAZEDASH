@@ -165,10 +165,12 @@
     // Handle continue button click (from win screen)
     function handleContinue() {
         try {
-            hytopia.sendData({ type: 'player-restart' });
+            // Changed message type to differentiate from death restart
+            hytopia.sendData({ type: 'player-restart-from-win' }); 
+            console.log("Sent player-restart-from-win message"); // DEBUG
         } catch (error) {
             // Keep error log
-            console.error("[ERROR] Failed to send player-restart message:", error);
+            console.error("[ERROR] Failed to send player-restart-from-win message:", error);
         }
         
         const winScreen = document.getElementById('win-screen');
